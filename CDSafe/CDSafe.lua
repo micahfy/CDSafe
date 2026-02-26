@@ -1,6 +1,7 @@
 local ADDON_PREFIX = "CDSafe"
 local BROADCAST_INTERVAL = 90
 local REQUEST_INTERVAL = 20
+local LEADER_SYNC_TIMEOUT = 5
 local WARNING_COOLDOWN = 45
 local RAID_INFO_REQUEST_INTERVAL = 30
 
@@ -32,6 +33,8 @@ local FALLBACK_TEXT = {
     WARNING_TEXT_TEMPLATE = "Leader [%s] is locked to [%s]. Do NOT enter to avoid empty lockout.",
     WARNING_LEADER_UNKNOWN = "Reminder: Leader progress for [%s] is unknown. Please check with the leader.",
     INFO_SAFE_ENTER_TEMPLATE = "Info: Leader has no lockout for [%s]. You may enter.",
+    LEADER_SYNC_TIMEOUT_TEXT = "No leader sync received (leader may not have the addon).",
+    RETRY = "Retry",
     RESET_MINIMAP = "Minimap icon position reset.",
     INSTANCE_ID_LABEL = "ID",
     STATUS_WITH_ID_TEMPLATE = "%s (%s: %s)",
@@ -365,6 +368,8 @@ local state = {
     leaderRaidNameByKey = nil,
     leaderRaidInstanceIdByKey = nil,
     leaderSyncAt = nil,
+    leaderSyncAttemptStartAt = nil,
+    leaderSyncTimedOut = false,
 
     lastBroadcastAt = 0,
     lastRequestAt = 0,
@@ -382,9 +387,10 @@ local state = {
 
 local ui = {
     panel = nil,
-    leaderInfoText = nil,
     syncInfoText = nil,
-    playerInfoText = nil,
+    syncRetryButton = nil,
+    headerLeaderText = nil,
+    headerPlayerText = nil,
     rows = {},
     minimapButton = nil,
     minimapIcon = nil,
@@ -395,6 +401,9 @@ local ui = {
     helpFrame = nil,
     helpBodyText = nil,
 }
+
+local RequestSync
+local BeginLeaderSyncAttempt
 
 local function NormalizeText(text)
     if not text or text == "" then
@@ -952,16 +961,14 @@ local function RefreshStatusPanel()
         leaderKnown = true
     end
 
-    if ui.leaderInfoText then
-        ui.leaderInfoText:SetText(L.LEADER .. ": " .. leaderNameText)
-    end
-
     if ui.syncInfoText then
         if state.isLeader then
             ui.syncInfoText:SetText(L.LEADER_DATA_SOURCE_LOCAL)
         elseif state.inRaid then
             if leaderKnown then
                 ui.syncInfoText:SetText(L.LEADER_SYNC_TIME .. ": " .. FormatTimeStamp(state.leaderSyncAt))
+            elseif state.leaderSyncTimedOut then
+                ui.syncInfoText:SetText(L.LEADER_SYNC_TIMEOUT_TEXT)
             else
                 ui.syncInfoText:SetText(L.LEADER_SYNC_TIME .. ": " .. L.WAITING_FOR_SYNC)
             end
@@ -970,9 +977,22 @@ local function RefreshStatusPanel()
         end
     end
 
-    if ui.playerInfoText then
-        local name = state.playerName ~= "" and state.playerName or L.PLAYER
-        ui.playerInfoText:SetText(L.PLAYER .. ": " .. name)
+    if ui.syncRetryButton then
+        if state.inRaid and (not state.isLeader) and state.leaderSyncTimedOut then
+            ui.syncRetryButton:Show()
+        else
+            ui.syncRetryButton:Hide()
+        end
+    end
+
+    if ui.headerLeaderText then
+        local leaderHeaderId = (leaderNameText and leaderNameText ~= "") and leaderNameText or "?"
+        ui.headerLeaderText:SetText(L.HEADER_LEADER .. " - " .. leaderHeaderId)
+    end
+
+    if ui.headerPlayerText then
+        local playerHeaderId = (state.playerName and state.playerName ~= "") and state.playerName or "?"
+        ui.headerPlayerText:SetText(L.HEADER_YOU .. " - " .. playerHeaderId)
     end
 
     local i
@@ -1172,12 +1192,12 @@ local function CreateStatusPanel()
 
     local rowCount = tgetn(RAID_DEFS)
     local panelWidth = 650
-    local panelHeight = math.max(420, 178 + (rowCount * 30))
+    local panelHeight = math.max(400, 138 + (rowCount * 30))
     local columnRaidX = 20
     local columnLeaderX = 262
     local columnPlayerX = 462
-    local headerY = -124
-    local firstRowY = -156
+    local headerY = -96
+    local firstRowY = -128
     local rowStep = 30
     local statusColumnWidth = 165
     local helpFrameWidth = panelWidth - 50
@@ -1230,17 +1250,19 @@ local function CreateStatusPanel()
         ToggleHelpPanel()
     end)
 
-    ui.leaderInfoText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    ui.leaderInfoText:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -48)
-    ui.leaderInfoText:SetText(L.LEADER .. ": " .. L.UNKNOWN)
-
     ui.syncInfoText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    ui.syncInfoText:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -68)
+    ui.syncInfoText:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -52)
     ui.syncInfoText:SetText(L.LEADER_SYNC_TIME .. ": N/A")
 
-    ui.playerInfoText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    ui.playerInfoText:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -90)
-    ui.playerInfoText:SetText(L.PLAYER .. ": " .. L.UNKNOWN)
+    local syncRetryButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    syncRetryButton:SetWidth(46)
+    syncRetryButton:SetHeight(18)
+    syncRetryButton:SetPoint("LEFT", ui.syncInfoText, "RIGHT", 8, 0)
+    syncRetryButton:SetText(L.RETRY)
+    syncRetryButton:SetScript("OnClick", function()
+        BeginLeaderSyncAttempt(true)
+    end)
+    syncRetryButton:Hide()
 
     local headerRaid = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     headerRaid:SetPoint("TOPLEFT", panel, "TOPLEFT", columnRaidX, headerY)
@@ -1248,11 +1270,15 @@ local function CreateStatusPanel()
 
     local headerLeader = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     headerLeader:SetPoint("TOPLEFT", panel, "TOPLEFT", columnLeaderX, headerY)
-    headerLeader:SetText(L.HEADER_LEADER)
+    headerLeader:SetWidth(statusColumnWidth)
+    headerLeader:SetJustifyH("LEFT")
+    headerLeader:SetText(L.HEADER_LEADER .. " - ?")
 
     local headerPlayer = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     headerPlayer:SetPoint("TOPLEFT", panel, "TOPLEFT", columnPlayerX, headerY)
-    headerPlayer:SetText(L.HEADER_YOU)
+    headerPlayer:SetWidth(statusColumnWidth)
+    headerPlayer:SetJustifyH("LEFT")
+    headerPlayer:SetText(L.HEADER_YOU .. " - ?")
 
     local i
     for i = 1, tgetn(RAID_DEFS) do
@@ -1282,7 +1308,7 @@ local function CreateStatusPanel()
     end
 
     local help = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    help:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 20, 20)
+    help:SetPoint("TOPLEFT", ui.syncInfoText, "BOTTOMLEFT", 0, -6)
     help:SetWidth(panelWidth - 40)
     help:SetJustifyH("LEFT")
     help:SetText(L.HELP_MINIMAP)
@@ -1332,6 +1358,9 @@ local function CreateStatusPanel()
     ui.helpButton = helpButton
     ui.helpFrame = helpFrame
     ui.helpBodyText = helpBody
+    ui.syncRetryButton = syncRetryButton
+    ui.headerLeaderText = headerLeader
+    ui.headerPlayerText = headerPlayer
 end
 
 local function RefreshGroupState()
@@ -1348,6 +1377,8 @@ local function RefreshGroupState()
         state.leaderRaidNameByKey = nil
         state.leaderRaidInstanceIdByKey = nil
         state.leaderSyncAt = nil
+        state.leaderSyncAttemptStartAt = nil
+        state.leaderSyncTimedOut = false
         state.pendingSyncFromReq = false
         state.lastWarningAt = {}
         ClearCenterWarning()
@@ -1356,9 +1387,14 @@ local function RefreshGroupState()
         state.leaderRaidNameByKey = nil
         state.leaderRaidInstanceIdByKey = nil
         state.leaderSyncAt = nil
+        state.leaderSyncAttemptStartAt = nil
+        state.leaderSyncTimedOut = false
         state.pendingSyncFromReq = false
         state.lastWarningAt = {}
         ClearCenterWarning()
+    elseif state.isLeader then
+        state.leaderSyncAttemptStartAt = nil
+        state.leaderSyncTimedOut = false
     end
 
     return leaderChanged
@@ -1381,18 +1417,38 @@ local function BroadcastSync(force)
     return true
 end
 
-local function RequestSync()
+RequestSync = function(force)
     if state.isLeader or not state.inRaid or not SendAddonMessage then
         return
     end
 
+    if state.leaderSyncTimedOut and (not force) then
+        return
+    end
+
     local now = GetTime and GetTime() or 0
-    if now - state.lastRequestAt < REQUEST_INTERVAL then
+    if (not force) and (now - state.lastRequestAt < REQUEST_INTERVAL) then
         return
     end
 
     SendAddonMessage(ADDON_PREFIX, "REQ;" .. (state.playerName or ""), "RAID")
     state.lastRequestAt = now
+end
+
+BeginLeaderSyncAttempt = function(sendImmediateRequest)
+    if state.isLeader or not state.inRaid then
+        state.leaderSyncAttemptStartAt = nil
+        state.leaderSyncTimedOut = false
+        RefreshStatusPanel()
+        return
+    end
+
+    state.leaderSyncTimedOut = false
+    state.leaderSyncAttemptStartAt = GetTime and GetTime() or 0
+    if sendImmediateRequest then
+        RequestSync(true)
+    end
+    RefreshStatusPanel()
 end
 
 local function DetectRaidContext()
@@ -1455,6 +1511,14 @@ local function EvaluateWarning()
             return
         end
         ClearZoneMute(true)
+    end
+
+    if IsInInstance then
+        local inInstance, instanceType = IsInInstance()
+        if inInstance and instanceType == "raid" then
+            ClearCenterWarning()
+            return
+        end
     end
 
     local contextKeys, zone, subzone = DetectRaidContext()
@@ -1546,6 +1610,8 @@ local function OnSyncMessage(message, sender)
     state.leaderName = senderName ~= "" and senderName or leaderInPayload
     state.leaderRaidKeys, state.leaderRaidNameByKey, state.leaderRaidInstanceIdByKey = DeserializeRaidData(payload)
     state.leaderSyncAt = tonumber(syncStamp) or time()
+    state.leaderSyncAttemptStartAt = nil
+    state.leaderSyncTimedOut = false
 
     RefreshStatusPanel()
     EvaluateWarning()
@@ -1589,7 +1655,7 @@ local function OnLogin()
     if state.isLeader then
         BroadcastSync(true)
     elseif state.inRaid then
-        RequestSync()
+        BeginLeaderSyncAttempt(true)
     end
 
     RefreshStatusPanel()
@@ -1604,8 +1670,12 @@ local function OnRaidRosterUpdate()
         if leaderChanged then
             BroadcastSync(false)
         end
-    elseif state.inRaid and (leaderChanged or not state.leaderRaidKeys) then
-        RequestSync()
+    elseif state.inRaid then
+        if leaderChanged then
+            BeginLeaderSyncAttempt(true)
+        elseif (not state.leaderRaidKeys) and (not state.leaderSyncTimedOut) and (not state.leaderSyncAttemptStartAt) then
+            BeginLeaderSyncAttempt(true)
+        end
     end
 
     RefreshStatusPanel()
@@ -1631,8 +1701,8 @@ local function OnEnterWorld()
     RefreshGroupState()
     RequestRaidInfoThrottled(true)
 
-    if not state.isLeader and state.inRaid and not state.leaderRaidKeys then
-        RequestSync()
+    if not state.isLeader and state.inRaid and not state.leaderRaidKeys and (not state.leaderSyncTimedOut) and (not state.leaderSyncAttemptStartAt) then
+        BeginLeaderSyncAttempt(true)
     end
 
     RefreshStatusPanel()
@@ -1724,8 +1794,14 @@ frame:SetScript("OnUpdate", function(_, elapsed)
         if state.isLeader and (now - state.lastBroadcastAt >= BROADCAST_INTERVAL) then
             RequestRaidInfoThrottled(true)
             BroadcastSync(true)
-        elseif (not state.isLeader) and (not state.leaderRaidKeys) and (now - state.lastRequestAt >= REQUEST_INTERVAL) then
-            RequestSync()
+        elseif (not state.isLeader) and (not state.leaderRaidKeys) and state.leaderSyncAttemptStartAt and (not state.leaderSyncTimedOut) then
+            if now - state.leaderSyncAttemptStartAt >= LEADER_SYNC_TIMEOUT then
+                state.leaderSyncAttemptStartAt = nil
+                state.leaderSyncTimedOut = true
+                RefreshStatusPanel()
+            elseif now - state.lastRequestAt >= REQUEST_INTERVAL then
+                RequestSync()
+            end
         end
     end
 
