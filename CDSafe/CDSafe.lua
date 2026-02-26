@@ -4,16 +4,137 @@ local REQUEST_INTERVAL = 20
 local WARNING_COOLDOWN = 45
 local RAID_INFO_REQUEST_INTERVAL = 30
 
-local STATUS_LOCKED = "|cffff4040Locked|r"
-local STATUS_OPEN = "|cff40ff40Open|r"
-local STATUS_UNKNOWN = "|cffb0b0b0Unknown|r"
+local CLIENT_LOCALE = (GetLocale and GetLocale()) or "enUS"
+local FALLBACK_TEXT = {
+    STATUS_LOCKED = "Locked",
+    STATUS_OPEN = "Open",
+    STATUS_UNKNOWN = "Unknown",
+    UNKNOWN = "Unknown",
+    YOU = "You",
+    PLAYER = "Player",
+    LEADER = "Leader",
+    LEADER_DATA_SOURCE_LOCAL = "Leader data source: Local",
+    LEADER_SYNC_TIME = "Leader sync time",
+    WAITING_FOR_SYNC = "Waiting for sync...",
+    NOT_IN_RAID = "Not in raid",
+    PANEL_TITLE = "CDSafe - Raid Lockout Status",
+    HEADER_RAID = "Raid",
+    HEADER_LEADER = "Leader",
+    HEADER_YOU = "You",
+    TOOLTIP_TOGGLE_PANEL = "Left Click: Open/Close panel",
+    TOOLTIP_MOVE_ICON = "Right Drag: Move icon",
+    HELP_MINIMAP = "Minimap icon: Left click to toggle panel, right drag to move icon.",
+    WARNING_LEADER_FALLBACK = "Leader",
+    WARNING_TEXT_TEMPLATE = "Leader [%s] is locked to [%s]. Do NOT enter to avoid empty lockout.",
+    RESET_MINIMAP = "Minimap icon position reset.",
+    INSTANCE_ID_LABEL = "ID",
+    STATUS_WITH_ID_TEMPLATE = "%s (%s: %s)",
+}
+
+local FALLBACK_RAID_DISPLAY = {
+    moltencore = "Molten Core",
+    blackwinglair = "Blackwing Lair",
+    zulgurub = "Zul'Gurub",
+    onyxia = "Onyxia's Lair",
+    aq20 = "Ruins of Ahn'Qiraj",
+    aq40 = "Temple of Ahn'Qiraj",
+    naxxramas = "Naxxramas",
+    lowerkarazhanhalls = "Lower Karazhan Halls",
+    towerofkarazhan = "Tower of Karazhan",
+}
+
+local FALLBACK_WARNING_AREAS = {
+    moltencore = {
+        { zone = "Blackrock Mountain" },
+        { subzone = "Blackrock Depths" },
+        { subzone = "Molten Core" },
+    },
+    blackwinglair = {
+        { zone = "Blackrock Mountain" },
+        { subzone = "Blackrock Spire" },
+        { subzone = "Blackwing Lair" },
+    },
+    zulgurub = {
+        { subzone = "Zul'Gurub" },
+    },
+    onyxia = {
+        { subzone = "Wyrmbog" },
+        { subzone = "Onyxia's Lair" },
+    },
+    aq20 = {
+        { zone = "安其拉之门" },
+    },
+    aq40 = {
+        { zone = "安其拉之门" },
+    },
+    lowerkarazhanhalls = {
+        { zone = "Karazhan" },
+        { subzone = "Lower Karazhan Halls" },
+        { subzone = "卡拉赞下层大厅" },
+    },
+    towerofkarazhan = {
+        { zone = "Karazhan" },
+        { subzone = "Tower of Karazhan" },
+        { subzone = "卡拉赞之塔" },
+    },
+    naxxramas = {
+        { subzone = "Plaguewood" },
+        { subzone = "Naxxramas" },
+    },
+}
+
+local function CopyKeys(target, source)
+    if not source then
+        return
+    end
+    local key, value
+    for key, value in pairs(source) do
+        target[key] = value
+    end
+end
+
+local function ResolveLocaleTables()
+    local localeDB = CDSafeLocaleDB or {}
+    local enUSPack = localeDB["enUS"] or {}
+    local activePack = localeDB[CLIENT_LOCALE] or enUSPack
+
+    local text = {}
+    CopyKeys(text, FALLBACK_TEXT)
+    CopyKeys(text, enUSPack.text)
+    CopyKeys(text, activePack.text)
+
+    local raidDisplay = {}
+    CopyKeys(raidDisplay, FALLBACK_RAID_DISPLAY)
+    CopyKeys(raidDisplay, enUSPack.raidDisplay)
+    CopyKeys(raidDisplay, activePack.raidDisplay)
+
+    local warningAreas = {}
+    CopyKeys(warningAreas, FALLBACK_WARNING_AREAS)
+    CopyKeys(warningAreas, enUSPack.warningAreas)
+    CopyKeys(warningAreas, activePack.warningAreas)
+
+    return text, raidDisplay, warningAreas
+end
+
+local L, RAID_DISPLAY, WARNING_AREAS = ResolveLocaleTables()
+
+local STATUS_LOCKED = "|cffff4040" .. L.STATUS_LOCKED .. "|r"
+local STATUS_OPEN = "|cff40ff40" .. L.STATUS_OPEN .. "|r"
+local STATUS_UNKNOWN = "|cffb0b0b0" .. L.STATUS_UNKNOWN .. "|r"
 
 local DEFAULT_DB = {
     minimapAngle = 220,
 }
 
-local tgetn = table.getn or function(t)
-    return #t
+local tgetn = table.getn
+if not tgetn then
+    tgetn = function(t)
+        local n = 0
+        while t[n + 1] ~= nil do
+            n = n + 1
+        end
+        return n
+    end
 end
 
 local RAID_DEFS = {
@@ -94,6 +215,8 @@ local RAID_DEFS = {
             "Ahn'Qiraj",
             "安其拉",
             "Ahn'Qiraj: The Fallen Kingdom",
+            "The Scarab Wall",
+            "安其拉之墙",
             "安其拉：堕落王国",
         },
     },
@@ -112,7 +235,39 @@ local RAID_DEFS = {
             "Ahn'Qiraj",
             "安其拉",
             "Ahn'Qiraj: The Fallen Kingdom",
+            "The Scarab Wall",
+            "安其拉之墙",
             "安其拉：堕落王国",
+        },
+    },
+    {
+        key = "lowerkarazhanhalls",
+        short = "Kara-L",
+        display = "Lower Karazhan Halls",
+        aliases = {
+            "Lower Karazhan Halls",
+            "卡拉赞下层大厅",
+        },
+        entranceSubzones = {
+            "Lower Karazhan Halls",
+            "卡拉赞下层大厅",
+            "Karazhan",
+            "卡拉赞",
+        },
+    },
+    {
+        key = "towerofkarazhan",
+        short = "Kara-T",
+        display = "Tower of Karazhan",
+        aliases = {
+            "Tower of Karazhan",
+            "卡拉赞之塔",
+        },
+        entranceSubzones = {
+            "Tower of Karazhan",
+            "卡拉赞之塔",
+            "Karazhan",
+            "卡拉赞",
         },
     },
     {
@@ -132,9 +287,16 @@ local RAID_DEFS = {
     },
 }
 
+local function GetRaidDisplayName(def)
+    if def and RAID_DISPLAY[def.key] then
+        return RAID_DISPLAY[def.key]
+    end
+    return def and def.display or ""
+end
+
 local RAID_DEF_BY_KEY = {}
 local RAID_ALIAS_TO_KEY = {}
-local RAID_ENTRANCE_SUBZONE_KEYS = {}
+local WARNING_AREA_RULES = {}
 
 local state = {
     playerName = "",
@@ -145,10 +307,12 @@ local state = {
     savedRaidKeys = {},
     savedRaidNames = {},
     savedRaidNameByKey = {},
+    savedRaidInstanceIdByKey = {},
     savedHash = "",
 
     leaderRaidKeys = nil,
     leaderRaidNameByKey = nil,
+    leaderRaidInstanceIdByKey = nil,
     leaderSyncAt = nil,
 
     lastBroadcastAt = 0,
@@ -193,23 +357,51 @@ local function NormalizePlayerName(name)
     return NormalizeText(StripRealm(name))
 end
 
+local hasStringMatch = type(string.match) == "function"
+local hasStringGmatch = type(string.gmatch) == "function"
+local hasStringGfind = type(string.gfind) == "function"
+
+local function StrMatch(text, pattern)
+    if hasStringMatch then
+        return string.match(text, pattern)
+    end
+    local _, _, c1, c2, c3, c4, c5 = string.find(text, pattern)
+    if c1 == nil then
+        return nil
+    end
+    if c5 ~= nil then
+        return c1, c2, c3, c4, c5
+    end
+    if c4 ~= nil then
+        return c1, c2, c3, c4
+    end
+    if c3 ~= nil then
+        return c1, c2, c3
+    end
+    if c2 ~= nil then
+        return c1, c2
+    end
+    return c1
+end
+
+local function StrIter(text, pattern)
+    if hasStringGmatch then
+        return string.gmatch(text, pattern)
+    end
+    if hasStringGfind then
+        return string.gfind(text, pattern)
+    end
+    return function()
+        return nil
+    end
+end
+
 local function AddKeyToLookup(lookup, text, key)
     local normalized = NormalizeText(text)
     if normalized == "" then
         return
     end
     lookup[normalized] = key
-end
-
-local function AddKeyToMultiLookup(lookup, text, key)
-    local normalized = NormalizeText(text)
-    if normalized == "" then
-        return
-    end
-    if not lookup[normalized] then
-        lookup[normalized] = {}
-    end
-    lookup[normalized][key] = true
 end
 
 local function BuildRaidLookups()
@@ -225,13 +417,44 @@ local function BuildRaidLookups()
         for j = 1, tgetn(def.aliases or {}) do
             AddKeyToLookup(RAID_ALIAS_TO_KEY, def.aliases[j], def.key)
         end
-        for j = 1, tgetn(def.entranceSubzones or {}) do
-            AddKeyToMultiLookup(RAID_ENTRANCE_SUBZONE_KEYS, def.entranceSubzones[j], def.key)
+    end
+end
+
+local function AddWarningAreaRule(raidKey, zoneText, subzoneText)
+    local zone = NormalizeText(zoneText)
+    local subzone = NormalizeText(subzoneText)
+
+    if zone == "" and subzone == "" then
+        return
+    end
+
+    table.insert(WARNING_AREA_RULES, {
+        key = raidKey,
+        zone = zone,
+        subzone = subzone,
+    })
+end
+
+local function BuildWarningAreaRules()
+    local rules = {}
+    WARNING_AREA_RULES = rules
+
+    local raidKey, areaList
+    for raidKey, areaList in pairs(WARNING_AREAS or {}) do
+        if RAID_DEF_BY_KEY[raidKey] and type(areaList) == "table" then
+            local i
+            for i = 1, tgetn(areaList) do
+                local area = areaList[i]
+                if type(area) == "table" then
+                    AddWarningAreaRule(raidKey, area.zone, area.subzone)
+                end
+            end
         end
     end
 end
 
 BuildRaidLookups()
+BuildWarningAreaRules()
 
 local function EnsureDatabase()
     if not CDSafeDB then
@@ -316,83 +539,131 @@ local function BuildSavedRaids()
     local keys = {}
     local names = {}
     local nameByKey = {}
+    local instanceIdByKey = {}
 
     if not GetNumSavedInstances or not GetSavedInstanceInfo then
-        return keys, names, nameByKey
+        return keys, names, nameByKey, instanceIdByKey
     end
 
     local total = GetNumSavedInstances() or 0
     local i
     for i = 1, total do
-        local name = GetSavedInstanceInfo(i)
+        local name, instanceId = GetSavedInstanceInfo(i)
         if name and name ~= "" then
             local key = GetRaidKey(name)
-            keys[key] = true
-            if not nameByKey[key] then
-                nameByKey[key] = tostring(name)
+            if key and key ~= "" then
+                keys[key] = true
+                if not nameByKey[key] then
+                    nameByKey[key] = tostring(name)
+                end
+                instanceId = tonumber(instanceId)
+                if instanceId and instanceId > 0 then
+                    instanceIdByKey[key] = instanceId
+                end
             end
             table.insert(names, tostring(name))
         end
     end
 
-    return keys, names, nameByKey
+    return keys, names, nameByKey, instanceIdByKey
 end
 
 local function UpdateSavedRaids()
-    local keys, names, nameByKey = BuildSavedRaids()
+    local keys, names, nameByKey, instanceIdByKey = BuildSavedRaids()
     local newHash = BuildHashFromNames(names)
     local changed = newHash ~= state.savedHash
 
     state.savedRaidKeys = keys
     state.savedRaidNames = names
     state.savedRaidNameByKey = nameByKey
+    state.savedRaidInstanceIdByKey = instanceIdByKey
     state.savedHash = newHash
 
     return changed
 end
 
-local function SerializeRaidNames(names)
-    local clean = {}
+local function SerializeRaidData(keys, nameByKey, instanceIdByKey)
+    local serialized = {}
+    local orderedKeys = {}
+    local key
+
+    for key, _ in pairs(keys or {}) do
+        table.insert(orderedKeys, key)
+    end
+    table.sort(orderedKeys)
+
     local i
-    for i = 1, tgetn(names) do
-        local name = names[i]
-        if name and name ~= "" then
-            name = string.gsub(name, "[;|]", "")
-            if name ~= "" then
-                table.insert(clean, name)
-            end
+    for i = 1, tgetn(orderedKeys) do
+        key = orderedKeys[i]
+        local name = nameByKey and nameByKey[key] or key
+        local instanceId = tonumber(instanceIdByKey and instanceIdByKey[key]) or 0
+
+        key = string.gsub(tostring(key or ""), "[;|,~]", "")
+        name = string.gsub(tostring(name or ""), "[;|,~]", "")
+        if key ~= "" then
+            table.insert(serialized, key .. "~" .. tostring(instanceId) .. "~" .. name)
         end
     end
-    table.sort(clean)
-    return table.concat(clean, "|")
+    return table.concat(serialized, ",")
 end
 
-local function DeserializeRaidNames(payload)
+local function DeserializeRaidData(payload)
     local keys = {}
     local nameByKey = {}
+    local instanceIdByKey = {}
 
     if not payload or payload == "" then
-        return keys, nameByKey
+        return keys, nameByKey, instanceIdByKey
     end
 
-    for token in string.gmatch(payload, "([^|]+)") do
+    -- Accept both legacy name-only payloads and key/id/name payloads.
+    for token in StrIter(payload, "([^,|]+)") do
         if token and token ~= "" then
-            local key = GetRaidKey(token)
-            keys[key] = true
-            if not nameByKey[key] then
-                nameByKey[key] = token
+            local rawKey, rawId, rawName = StrMatch(token, "^([^~]*)~([^~]*)~(.*)$")
+            local key, nameForKey
+            if rawKey and rawKey ~= "" then
+                key = GetRaidKey(rawKey)
+            else
+                key = ""
+            end
+            if (not key) or key == "" then
+                key = GetRaidKey(rawName)
+            end
+            if (not key) or key == "" then
+                key = GetRaidKey(token)
+            end
+
+            if key and key ~= "" then
+                keys[key] = true
+
+                nameForKey = rawName
+                if not nameForKey or nameForKey == "" then
+                    nameForKey = token
+                end
+                if not nameByKey[key] then
+                    nameByKey[key] = nameForKey
+                end
+
+                local instanceId = tonumber(rawId)
+                if instanceId and instanceId > 0 then
+                    instanceIdByKey[key] = instanceId
+                end
             end
         end
     end
 
-    return keys, nameByKey
+    return keys, nameByKey, instanceIdByKey
 end
 
-local function FormatStatusText(known, locked)
+local function FormatStatusText(known, locked, instanceId)
     if not known then
         return STATUS_UNKNOWN
     end
     if locked then
+        local numericId = tonumber(instanceId)
+        if numericId and numericId > 0 then
+            return string.format(L.STATUS_WITH_ID_TEMPLATE, STATUS_LOCKED, L.INSTANCE_ID_LABEL, tostring(numericId))
+        end
         return STATUS_LOCKED
     end
     return STATUS_OPEN
@@ -424,37 +695,39 @@ local function RefreshStatusPanel()
         return
     end
 
-    local leaderNameText = state.leaderName or "Unknown"
+    local leaderNameText = state.leaderName or L.UNKNOWN
     local leaderKeys = state.leaderRaidKeys
+    local leaderInstanceIdByKey = state.leaderRaidInstanceIdByKey
     local leaderKnown = leaderKeys ~= nil
 
     if state.isLeader then
-        leaderNameText = state.playerName ~= "" and state.playerName or "You"
+        leaderNameText = state.playerName ~= "" and state.playerName or L.YOU
         leaderKeys = state.savedRaidKeys
+        leaderInstanceIdByKey = state.savedRaidInstanceIdByKey
         leaderKnown = true
     end
 
     if ui.leaderInfoText then
-        ui.leaderInfoText:SetText("Leader: " .. leaderNameText)
+        ui.leaderInfoText:SetText(L.LEADER .. ": " .. leaderNameText)
     end
 
     if ui.syncInfoText then
         if state.isLeader then
-            ui.syncInfoText:SetText("Leader data source: Local")
+            ui.syncInfoText:SetText(L.LEADER_DATA_SOURCE_LOCAL)
         elseif state.inRaid then
             if leaderKnown then
-                ui.syncInfoText:SetText("Leader sync time: " .. FormatTimeStamp(state.leaderSyncAt))
+                ui.syncInfoText:SetText(L.LEADER_SYNC_TIME .. ": " .. FormatTimeStamp(state.leaderSyncAt))
             else
-                ui.syncInfoText:SetText("Leader sync time: Waiting for sync...")
+                ui.syncInfoText:SetText(L.LEADER_SYNC_TIME .. ": " .. L.WAITING_FOR_SYNC)
             end
         else
-            ui.syncInfoText:SetText("Leader sync time: Not in raid")
+            ui.syncInfoText:SetText(L.LEADER_SYNC_TIME .. ": " .. L.NOT_IN_RAID)
         end
     end
 
     if ui.playerInfoText then
-        local name = state.playerName ~= "" and state.playerName or "Player"
-        ui.playerInfoText:SetText("Player: " .. name)
+        local name = state.playerName ~= "" and state.playerName or L.PLAYER
+        ui.playerInfoText:SetText(L.PLAYER .. ": " .. name)
     end
 
     local i
@@ -463,14 +736,19 @@ local function RefreshStatusPanel()
         local row = ui.rows[def.key]
         if row then
             local playerLocked = state.savedRaidKeys[def.key] and true or false
+            local playerInstanceId = state.savedRaidInstanceIdByKey and state.savedRaidInstanceIdByKey[def.key]
             local leaderLocked = false
+            local leaderInstanceId = nil
             if leaderKnown and leaderKeys then
                 leaderLocked = leaderKeys[def.key] and true or false
+                if leaderLocked and leaderInstanceIdByKey then
+                    leaderInstanceId = leaderInstanceIdByKey[def.key]
+                end
             end
 
-            row.raidText:SetText(def.short .. " - " .. def.display)
-            row.leaderText:SetText(FormatStatusText(leaderKnown, leaderLocked))
-            row.playerText:SetText(FormatStatusText(true, playerLocked))
+            row.raidText:SetText(def.short .. " - " .. GetRaidDisplayName(def))
+            row.leaderText:SetText(FormatStatusText(leaderKnown, leaderLocked, leaderInstanceId))
+            row.playerText:SetText(FormatStatusText(true, playerLocked, playerInstanceId))
         end
     end
 end
@@ -585,8 +863,8 @@ local function CreateMinimapButton()
         end
         GameTooltip:SetOwner(this, "ANCHOR_LEFT")
         GameTooltip:AddLine("CDSafe")
-        GameTooltip:AddLine("Left Click: Open/Close panel", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine("Right Drag: Move icon", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(L.TOOLTIP_TOGGLE_PANEL, 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(L.TOOLTIP_MOVE_ICON, 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
 
@@ -626,9 +904,20 @@ local function CreateStatusPanel()
         return
     end
 
+    local rowCount = tgetn(RAID_DEFS)
+    local panelWidth = 760
+    local panelHeight = math.max(420, 178 + (rowCount * 30))
+    local columnRaidX = 20
+    local columnLeaderX = 430
+    local columnPlayerX = 595
+    local headerY = -124
+    local firstRowY = -156
+    local rowStep = 30
+    local statusColumnWidth = 150
+
     local panel = CreateFrame("Frame", "CDSafeStatusPanel", UIParent)
-    panel:SetWidth(560)
-    panel:SetHeight(360)
+    panel:SetWidth(panelWidth)
+    panel:SetHeight(panelHeight)
     panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     panel:SetFrameStrata("DIALOG")
     panel:SetMovable(true)
@@ -653,48 +942,54 @@ local function CreateStatusPanel()
 
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     title:SetPoint("TOP", panel, "TOP", 0, -16)
-    title:SetText("CDSafe - Raid Lockout Status")
+    title:SetText(L.PANEL_TITLE)
 
     local close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -6, -6)
 
     ui.leaderInfoText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     ui.leaderInfoText:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -48)
-    ui.leaderInfoText:SetText("Leader: Unknown")
+    ui.leaderInfoText:SetText(L.LEADER .. ": " .. L.UNKNOWN)
 
     ui.syncInfoText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     ui.syncInfoText:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -68)
-    ui.syncInfoText:SetText("Leader sync time: N/A")
+    ui.syncInfoText:SetText(L.LEADER_SYNC_TIME .. ": N/A")
 
     ui.playerInfoText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     ui.playerInfoText:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -90)
-    ui.playerInfoText:SetText("Player: Unknown")
+    ui.playerInfoText:SetText(L.PLAYER .. ": " .. L.UNKNOWN)
 
     local headerRaid = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    headerRaid:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -124)
-    headerRaid:SetText("Raid")
+    headerRaid:SetPoint("TOPLEFT", panel, "TOPLEFT", columnRaidX, headerY)
+    headerRaid:SetText(L.HEADER_RAID)
 
     local headerLeader = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    headerLeader:SetPoint("TOPLEFT", panel, "TOPLEFT", 350, -124)
-    headerLeader:SetText("Leader")
+    headerLeader:SetPoint("TOPLEFT", panel, "TOPLEFT", columnLeaderX, headerY)
+    headerLeader:SetText(L.HEADER_LEADER)
 
     local headerPlayer = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    headerPlayer:SetPoint("TOPLEFT", panel, "TOPLEFT", 450, -124)
-    headerPlayer:SetText("You")
+    headerPlayer:SetPoint("TOPLEFT", panel, "TOPLEFT", columnPlayerX, headerY)
+    headerPlayer:SetText(L.HEADER_YOU)
 
     local i
     for i = 1, tgetn(RAID_DEFS) do
         local def = RAID_DEFS[i]
-        local y = -124 - (i * 28)
+        local y = firstRowY - ((i - 1) * rowStep)
 
         local raidText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        raidText:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, y)
+        raidText:SetPoint("TOPLEFT", panel, "TOPLEFT", columnRaidX, y)
+        raidText:SetWidth(columnLeaderX - columnRaidX - 18)
+        raidText:SetJustifyH("LEFT")
 
         local leaderText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        leaderText:SetPoint("TOPLEFT", panel, "TOPLEFT", 350, y)
+        leaderText:SetPoint("TOPLEFT", panel, "TOPLEFT", columnLeaderX, y)
+        leaderText:SetWidth(statusColumnWidth)
+        leaderText:SetJustifyH("LEFT")
 
         local playerText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        playerText:SetPoint("TOPLEFT", panel, "TOPLEFT", 450, y)
+        playerText:SetPoint("TOPLEFT", panel, "TOPLEFT", columnPlayerX, y)
+        playerText:SetWidth(statusColumnWidth)
+        playerText:SetJustifyH("LEFT")
 
         ui.rows[def.key] = {
             raidText = raidText,
@@ -705,7 +1000,9 @@ local function CreateStatusPanel()
 
     local help = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     help:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 20, 20)
-    help:SetText("Minimap icon: Left click to toggle panel, right drag to move icon.")
+    help:SetWidth(panelWidth - 40)
+    help:SetJustifyH("LEFT")
+    help:SetText(L.HELP_MINIMAP)
 
     ui.panel = panel
 end
@@ -722,11 +1019,13 @@ local function RefreshGroupState()
     if not state.inRaid then
         state.leaderRaidKeys = nil
         state.leaderRaidNameByKey = nil
+        state.leaderRaidInstanceIdByKey = nil
         state.leaderSyncAt = nil
         state.lastWarningAt = {}
     elseif leaderChanged and (not state.isLeader) then
         state.leaderRaidKeys = nil
         state.leaderRaidNameByKey = nil
+        state.leaderRaidInstanceIdByKey = nil
         state.leaderSyncAt = nil
         state.lastWarningAt = {}
     end
@@ -744,7 +1043,7 @@ local function BroadcastSync(force)
         return
     end
 
-    local payload = SerializeRaidNames(state.savedRaidNames or {})
+    local payload = SerializeRaidData(state.savedRaidKeys or {}, state.savedRaidNameByKey or {}, state.savedRaidInstanceIdByKey or {})
     local message = "SYNC;" .. (state.playerName or "") .. ";" .. tostring(time()) .. ";" .. payload
     SendAddonMessage(ADDON_PREFIX, message, "RAID")
     state.lastBroadcastAt = now
@@ -762,19 +1061,6 @@ local function RequestSync()
 
     SendAddonMessage(ADDON_PREFIX, "REQ;" .. (state.playerName or ""), "RAID")
     state.lastRequestAt = now
-end
-
-local function AddMatchedKeys(matchTable, keys, seen)
-    if not matchTable then
-        return
-    end
-    local key
-    for key, _ in pairs(matchTable) do
-        if not seen[key] then
-            seen[key] = true
-            table.insert(keys, key)
-        end
-    end
 end
 
 local function DetectRaidContext()
@@ -800,21 +1086,31 @@ local function DetectRaidContext()
         return keys, zone, subzone
     end
 
-    AddMatchedKeys(RAID_ENTRANCE_SUBZONE_KEYS[subzoneNormalized], keys, seen)
+    local i
+    for i = 1, tgetn(WARNING_AREA_RULES) do
+        local rule = WARNING_AREA_RULES[i]
+        local zoneMatched = (rule.zone == "") or (rule.zone == zoneNormalized)
+        local subzoneMatched = (rule.subzone == "") or (rule.subzone == subzoneNormalized)
+
+        if zoneMatched and subzoneMatched and not seen[rule.key] then
+            seen[rule.key] = true
+            table.insert(keys, rule.key)
+        end
+    end
 
     return keys, zone, subzone
 end
 
 local function BuildDisplayNameForKey(key)
+    local def = RAID_DEF_BY_KEY[key]
+    if def then
+        return GetRaidDisplayName(def)
+    end
     if state.leaderRaidNameByKey and state.leaderRaidNameByKey[key] then
         return state.leaderRaidNameByKey[key]
     end
     if state.savedRaidNameByKey and state.savedRaidNameByKey[key] then
         return state.savedRaidNameByKey[key]
-    end
-    local def = RAID_DEF_BY_KEY[key]
-    if def and def.display then
-        return def.display
     end
     return key
 end
@@ -867,16 +1163,16 @@ local function EvaluateWarning()
 
     state.lastWarningAt[signature] = now
 
-    local leaderName = state.leaderName or "Leader"
+    local leaderName = state.leaderName or L.WARNING_LEADER_FALLBACK
     local raidList = BuildRaidListText(locked)
-    local text = "Leader [" .. leaderName .. "] is locked to [" .. raidList .. "]. Do NOT enter to avoid empty lockout."
+    local text = string.format(L.WARNING_TEXT_TEMPLATE, leaderName, raidList)
 
     PrintMessage(text)
     ShowCenterWarning(text)
 end
 
 local function OnSyncMessage(message, sender)
-    local leaderInPayload, syncStamp, payload = string.match(message, "^SYNC;([^;]*);([^;]*);(.*)$")
+    local leaderInPayload, syncStamp, payload = StrMatch(message, "^SYNC;([^;]*);([^;]*);(.*)$")
     if not leaderInPayload then
         return
     end
@@ -893,7 +1189,7 @@ local function OnSyncMessage(message, sender)
     end
 
     state.leaderName = senderName ~= "" and senderName or leaderInPayload
-    state.leaderRaidKeys, state.leaderRaidNameByKey = DeserializeRaidNames(payload)
+    state.leaderRaidKeys, state.leaderRaidNameByKey, state.leaderRaidInstanceIdByKey = DeserializeRaidData(payload)
     state.leaderSyncAt = tonumber(syncStamp) or time()
 
     RefreshStatusPanel()
@@ -914,7 +1210,7 @@ local function OnAddonMessage(prefix, message, channel, sender)
         return
     end
 
-    local command = string.match(message, "^([^;]+)")
+    local command = StrMatch(message, "^([^;]+)")
     if command == "SYNC" then
         OnSyncMessage(message, sender)
     elseif command == "REQ" then
@@ -986,24 +1282,26 @@ end
 SLASH_CDSAFE1 = "/cdsafe"
 SlashCmdList["CDSAFE"] = function(msg)
     msg = string.lower(msg or "")
-    if msg == "show" then
+    msg = string.gsub(msg, "^%s+", "")
+    msg = string.gsub(msg, "%s+$", "")
+    if msg == "show" or msg == "显示" then
         if ui.panel then
             RefreshStatusPanel()
             ui.panel:Show()
         end
         return
     end
-    if msg == "hide" then
+    if msg == "hide" or msg == "隐藏" then
         if ui.panel then
             ui.panel:Hide()
         end
         return
     end
-    if msg == "reset" then
+    if msg == "reset" or msg == "重置" then
         EnsureDatabase()
         CDSafeDB.minimapAngle = DEFAULT_DB.minimapAngle
         UpdateMinimapButtonPosition()
-        PrintMessage("Minimap icon position reset.")
+        PrintMessage(L.RESET_MINIMAP)
         return
     end
 

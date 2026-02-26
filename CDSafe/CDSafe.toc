@@ -1,8 +1,12 @@
 ## Interface: 11200
-## Title: CDSafe
-## Notes: Raid lockout sync and entrance warning for Vanilla 1.12
+## Title: |CFF33AAFF[Utility]|R Raid Instance Cooldown Guard
+## Title-zhCN: |CFF33AAFF[辅助]|R 团本CD保护
+## Notes: Protect your raid lockout and avoid entering a locked leader's raid.
+## Notes-zhCN: 同步团长副本CD，并在副本入口区域提醒团员避免被锁定。
 ## Author: CDSafe
 ## Version: 1.0.0
 ## SavedVariables: CDSafeDB
 
+Locales\enUS.lua
+Locales\zhCN.lua
 CDSafe.lua
