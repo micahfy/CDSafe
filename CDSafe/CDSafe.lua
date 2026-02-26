@@ -27,6 +27,7 @@ local FALLBACK_TEXT = {
     WARNING_LEADER_FALLBACK = "Leader",
     WARNING_TEXT_TEMPLATE = "Leader [%s] is locked to [%s]. Do NOT enter to avoid empty lockout.",
     WARNING_LEADER_UNKNOWN = "Reminder: Leader raid progress is unknown. Please check with the leader.",
+    INFO_SAFE_ENTER_TEMPLATE = "Info: Leader has no lockout for [%s]. You may enter.",
     RESET_MINIMAP = "Minimap icon position reset.",
     INSTANCE_ID_LABEL = "ID",
     STATUS_WITH_ID_TEMPLATE = "%s (%s: %s)",
@@ -346,6 +347,9 @@ local state = {
     nextZoneCheckAt = 0,
     lastWarningAt = {},
     activeCenterWarningText = nil,
+    activeCenterWarningR = nil,
+    activeCenterWarningG = nil,
+    activeCenterWarningB = nil,
     updateBucket = 0,
 }
 
@@ -526,13 +530,16 @@ local function EnsureCenterWarningFrame()
     ui.centerWarningText = text
 end
 
-local function ShowCenterWarning(text)
+local function ShowCenterWarning(text, r, g, b)
     if not text or text == "" then
         return
     end
 
     EnsureCenterWarningFrame()
     if ui.centerWarningText then
+        if ui.centerWarningText.SetTextColor then
+            ui.centerWarningText:SetTextColor(r or 1.0, g or 0.2, b or 0.2)
+        end
         ui.centerWarningText:SetText(text)
     end
     if ui.centerWarningFrame then
@@ -542,6 +549,9 @@ end
 
 local function ClearCenterWarning()
     state.activeCenterWarningText = nil
+    state.activeCenterWarningR = nil
+    state.activeCenterWarningG = nil
+    state.activeCenterWarningB = nil
     if ui.centerWarningText then
         ui.centerWarningText:SetText("")
     end
@@ -553,18 +563,30 @@ local function ClearCenterWarning()
     end
 end
 
-local function UpdateCenterWarning(text)
+local function UpdateCenterWarning(text, r, g, b)
     if not text or text == "" then
         ClearCenterWarning()
         return
     end
 
-    if state.activeCenterWarningText == text and ui.centerWarningFrame and ui.centerWarningFrame:IsShown() then
+    r = r or 1.0
+    g = g or 0.2
+    b = b or 0.2
+
+    if state.activeCenterWarningText == text
+        and state.activeCenterWarningR == r
+        and state.activeCenterWarningG == g
+        and state.activeCenterWarningB == b
+        and ui.centerWarningFrame
+        and ui.centerWarningFrame:IsShown() then
         return
     end
 
     state.activeCenterWarningText = text
-    ShowCenterWarning(text)
+    state.activeCenterWarningR = r
+    state.activeCenterWarningG = g
+    state.activeCenterWarningB = b
+    ShowCenterWarning(text, r, g, b)
 end
 
 local function GetRaidKey(name)
@@ -1330,7 +1352,9 @@ local function EvaluateWarning()
     end
 
     if tgetn(locked) == 0 then
-        ClearCenterWarning()
+        local safeRaidList = BuildRaidListText(contextKeys)
+        local safeText = string.format(L.INFO_SAFE_ENTER_TEMPLATE, safeRaidList)
+        UpdateCenterWarning(safeText, 0.2, 1.0, 0.2)
         return
     end
 

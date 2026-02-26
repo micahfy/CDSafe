@@ -23,6 +23,7 @@ CDSafeLocaleDB["enUS"] = {
         WARNING_LEADER_FALLBACK = "Leader",
         WARNING_TEXT_TEMPLATE = "Leader [%s] is locked to [%s]. Do NOT enter to avoid empty lockout.",
         WARNING_LEADER_UNKNOWN = "Reminder: Leader raid progress is unknown. Please check with the leader.",
+        INFO_SAFE_ENTER_TEMPLATE = "Info: Leader has no lockout for [%s]. You may enter.",
         RESET_MINIMAP = "Minimap icon position reset.",
     },
     raidDisplay = {

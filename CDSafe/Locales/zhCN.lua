@@ -23,6 +23,7 @@ CDSafeLocaleDB["zhCN"] = {
         WARNING_LEADER_FALLBACK = "团长",
         WARNING_TEXT_TEMPLATE = "团长[%s]在[%s]已有CD，请勿进入以免被锁定。",
         WARNING_LEADER_UNKNOWN = "提醒：团长副本进度未知，请主动咨询团长",
+        INFO_SAFE_ENTER_TEMPLATE = "提示：团长在[%s]无CD，可以进入。",
         RESET_MINIMAP = "小地图图标位置已重置。",
         INSTANCE_ID_LABEL = "ID",
         STATUS_WITH_ID_TEMPLATE = "%s（%s: %s）",
