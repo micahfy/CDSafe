@@ -26,7 +26,7 @@ CDSafeLocaleDB["enUS"] = {
         MUTE_ZONE_AUTO_OFF = "Left muted area: alerts restored automatically.",
         WARNING_LEADER_FALLBACK = "Leader",
         WARNING_TEXT_TEMPLATE = "Leader [%s] is locked to [%s]. Do NOT enter to avoid empty lockout.",
-        WARNING_LEADER_UNKNOWN = "Reminder: Leader progress for [%s] is unknown. Please check with the leader.",
+        WARNING_LEADER_UNKNOWN = "Reminder: Unable to fetch the leader's progress for [%s]. Please ask the leader for their lockout progress.",
         INFO_SAFE_ENTER_TEMPLATE = "Info: Leader has no lockout for [%s]. You may enter.",
         RESET_MINIMAP = "Minimap icon position reset.",
     },
