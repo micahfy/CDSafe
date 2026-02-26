@@ -118,6 +118,30 @@ end
 
 local L, RAID_DISPLAY, WARNING_AREAS = ResolveLocaleTables()
 
+local function ResolveHelpContent()
+    local helpDB = CDSafeHelpContentDB or {}
+    local enUSPack = helpDB["enUS"] or {}
+    local activePack = helpDB[CLIENT_LOCALE] or enUSPack
+
+    local button = activePack.button or enUSPack.button
+    local title = activePack.title or enUSPack.title
+    local body = activePack.body or enUSPack.body
+
+    if not button or button == "" then
+        button = "Help"
+    end
+    if not title or title == "" then
+        title = "CDSafe Logic Notes"
+    end
+    if not body or body == "" then
+        body = "No help content available."
+    end
+
+    return button, title, body
+end
+
+local HELP_BUTTON_TEXT, HELP_TITLE_TEXT, HELP_BODY_TEXT = ResolveHelpContent()
+
 local STATUS_LOCKED = "|cffff4040" .. L.STATUS_LOCKED .. "|r"
 local STATUS_OPEN = "|cff40ff40" .. L.STATUS_OPEN .. "|r"
 local STATUS_UNKNOWN = "|cffb0b0b0" .. L.STATUS_UNKNOWN .. "|r"
@@ -320,6 +344,7 @@ local state = {
     lastRaidInfoRequestAt = 0,
     nextZoneCheckAt = 0,
     lastWarningAt = {},
+    activeCenterWarningText = nil,
     updateBucket = 0,
 }
 
@@ -330,6 +355,11 @@ local ui = {
     playerInfoText = nil,
     rows = {},
     minimapButton = nil,
+    centerWarningFrame = nil,
+    centerWarningText = nil,
+    helpButton = nil,
+    helpFrame = nil,
+    helpBodyText = nil,
 }
 
 local function NormalizeText(text)
@@ -471,14 +501,69 @@ local function PrintMessage(text)
     end
 end
 
-local function ShowCenterWarning(text)
-    if RaidNotice_AddMessage and RaidWarningFrame and ChatTypeInfo and ChatTypeInfo["RAID_WARNING"] then
-        RaidNotice_AddMessage(RaidWarningFrame, text, ChatTypeInfo["RAID_WARNING"])
+local function EnsureCenterWarningFrame()
+    if ui.centerWarningFrame then
         return
     end
-    if UIErrorsFrame and UIErrorsFrame.AddMessage then
-        UIErrorsFrame:AddMessage(text, 1.0, 0.2, 0.2, 1.0)
+
+    local frame = CreateFrame("Frame", "CDSafeCenterWarningFrame", UIParent)
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(20)
+    frame:SetWidth(1000)
+    frame:SetHeight(80)
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 180)
+    frame:Hide()
+
+    local text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    text:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    text:SetWidth(980)
+    text:SetJustifyH("CENTER")
+    text:SetTextColor(1.0, 0.2, 0.2)
+    text:SetText("")
+
+    ui.centerWarningFrame = frame
+    ui.centerWarningText = text
+end
+
+local function ShowCenterWarning(text)
+    if not text or text == "" then
+        return
     end
+
+    EnsureCenterWarningFrame()
+    if ui.centerWarningText then
+        ui.centerWarningText:SetText(text)
+    end
+    if ui.centerWarningFrame then
+        ui.centerWarningFrame:Show()
+    end
+end
+
+local function ClearCenterWarning()
+    state.activeCenterWarningText = nil
+    if ui.centerWarningText then
+        ui.centerWarningText:SetText("")
+    end
+    if ui.centerWarningFrame then
+        ui.centerWarningFrame:Hide()
+    end
+    if RaidWarningFrame and RaidWarningFrame.Clear then
+        RaidWarningFrame:Clear()
+    end
+end
+
+local function UpdateCenterWarning(text)
+    if not text or text == "" then
+        ClearCenterWarning()
+        return
+    end
+
+    if state.activeCenterWarningText == text and ui.centerWarningFrame and ui.centerWarningFrame:IsShown() then
+        return
+    end
+
+    state.activeCenterWarningText = text
+    ShowCenterWarning(text)
 end
 
 local function GetRaidKey(name)
@@ -758,10 +843,24 @@ local function ToggleStatusPanel()
         return
     end
     if ui.panel:IsShown() then
+        if ui.helpFrame then
+            ui.helpFrame:Hide()
+        end
         ui.panel:Hide()
     else
         RefreshStatusPanel()
         ui.panel:Show()
+    end
+end
+
+local function ToggleHelpPanel()
+    if not ui.helpFrame then
+        return
+    end
+    if ui.helpFrame:IsShown() then
+        ui.helpFrame:Hide()
+    else
+        ui.helpFrame:Show()
     end
 end
 
@@ -850,13 +949,6 @@ local function CreateMinimapButton()
     border:SetHeight(54)
     border:SetPoint("TOPLEFT", button, "TOPLEFT")
 
-    local highlight = button:CreateTexture(nil, "HIGHLIGHT")
-    highlight:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-    highlight:SetBlendMode("ADD")
-    highlight:SetWidth(56)
-    highlight:SetHeight(56)
-    highlight:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-
     button:SetScript("OnEnter", function()
         if not GameTooltip then
             return
@@ -905,15 +997,18 @@ local function CreateStatusPanel()
     end
 
     local rowCount = tgetn(RAID_DEFS)
-    local panelWidth = 760
+    local panelWidth = 620
     local panelHeight = math.max(420, 178 + (rowCount * 30))
     local columnRaidX = 20
-    local columnLeaderX = 430
-    local columnPlayerX = 595
+    local columnLeaderX = 250
+    local columnPlayerX = 445
     local headerY = -124
     local firstRowY = -156
     local rowStep = 30
     local statusColumnWidth = 150
+    local helpFrameWidth = panelWidth - 50
+    local helpFrameHeight = 120
+    local helpFrameGap = 8
 
     local panel = CreateFrame("Frame", "CDSafeStatusPanel", UIParent)
     panel:SetWidth(panelWidth)
@@ -939,6 +1034,11 @@ local function CreateStatusPanel()
     })
     panel:SetBackdropColor(0, 0, 0, 0.95)
     panel:Hide()
+    panel:SetScript("OnHide", function()
+        if ui.helpFrame then
+            ui.helpFrame:Hide()
+        end
+    end)
 
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     title:SetPoint("TOP", panel, "TOP", 0, -16)
@@ -946,6 +1046,15 @@ local function CreateStatusPanel()
 
     local close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -6, -6)
+
+    local helpButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    helpButton:SetWidth(56)
+    helpButton:SetHeight(22)
+    helpButton:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -38, -14)
+    helpButton:SetText(HELP_BUTTON_TEXT)
+    helpButton:SetScript("OnClick", function()
+        ToggleHelpPanel()
+    end)
 
     ui.leaderInfoText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     ui.leaderInfoText:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -48)
@@ -1004,7 +1113,51 @@ local function CreateStatusPanel()
     help:SetJustifyH("LEFT")
     help:SetText(L.HELP_MINIMAP)
 
+    local helpFrame = CreateFrame("Frame", nil, UIParent)
+    helpFrame:SetWidth(helpFrameWidth)
+    helpFrame:SetHeight(helpFrameHeight)
+    helpFrame:SetPoint("BOTTOM", panel, "TOP", 0, helpFrameGap)
+    helpFrame:SetFrameStrata("DIALOG")
+    helpFrame:SetFrameLevel((panel:GetFrameLevel() or 1) + 10)
+    helpFrame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    helpFrame:SetBackdropColor(0, 0, 0, 0.95)
+    helpFrame:Hide()
+
+    local helpTitle = helpFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    helpTitle:SetPoint("TOP", helpFrame, "TOP", 0, -16)
+    helpTitle:SetText(HELP_TITLE_TEXT)
+
+    local helpClose = CreateFrame("Button", nil, helpFrame, "UIPanelCloseButton")
+    helpClose:SetPoint("TOPRIGHT", helpFrame, "TOPRIGHT", -6, -6)
+
+    local helpBody = helpFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    helpBody:SetPoint("TOPLEFT", helpFrame, "TOPLEFT", 20, -44)
+    helpBody:SetWidth(helpFrameWidth - 40)
+    helpBody:SetJustifyH("LEFT")
+    helpBody:SetJustifyV("TOP")
+    helpBody:SetText(HELP_BODY_TEXT)
+
+    if helpBody.GetStringHeight then
+        local textHeight = tonumber(helpBody:GetStringHeight()) or 0
+        if textHeight > 0 then
+            local desiredHeight = math.ceil(textHeight + 72)
+            if desiredHeight > helpFrameHeight then
+                helpFrame:SetHeight(desiredHeight)
+            end
+        end
+    end
+
     ui.panel = panel
+    ui.helpButton = helpButton
+    ui.helpFrame = helpFrame
+    ui.helpBodyText = helpBody
 end
 
 local function RefreshGroupState()
@@ -1022,12 +1175,14 @@ local function RefreshGroupState()
         state.leaderRaidInstanceIdByKey = nil
         state.leaderSyncAt = nil
         state.lastWarningAt = {}
+        ClearCenterWarning()
     elseif leaderChanged and (not state.isLeader) then
         state.leaderRaidKeys = nil
         state.leaderRaidNameByKey = nil
         state.leaderRaidInstanceIdByKey = nil
         state.leaderSyncAt = nil
         state.lastWarningAt = {}
+        ClearCenterWarning()
     end
 
     return leaderChanged
@@ -1127,14 +1282,17 @@ end
 
 local function EvaluateWarning()
     if not state.inRaid or state.isLeader then
+        ClearCenterWarning()
         return
     end
     if not state.leaderRaidKeys then
+        ClearCenterWarning()
         return
     end
 
     local contextKeys, zone, subzone = DetectRaidContext()
     if tgetn(contextKeys) == 0 then
+        ClearCenterWarning()
         return
     end
 
@@ -1143,15 +1301,31 @@ local function EvaluateWarning()
     for i = 1, tgetn(contextKeys) do
         local key = contextKeys[i]
         if state.leaderRaidKeys[key] then
-            table.insert(locked, key)
+            local leaderInstanceId = tonumber(state.leaderRaidInstanceIdByKey and state.leaderRaidInstanceIdByKey[key]) or 0
+            local playerLocked = state.savedRaidKeys and state.savedRaidKeys[key] and true or false
+            local playerInstanceId = tonumber(state.savedRaidInstanceIdByKey and state.savedRaidInstanceIdByKey[key]) or 0
+            local sameLockoutId = playerLocked
+                and leaderInstanceId > 0
+                and playerInstanceId > 0
+                and leaderInstanceId == playerInstanceId
+
+            if not sameLockoutId then
+                table.insert(locked, key)
+            end
         end
     end
 
     if tgetn(locked) == 0 then
+        ClearCenterWarning()
         return
     end
 
     table.sort(locked)
+
+    local leaderName = state.leaderName or L.WARNING_LEADER_FALLBACK
+    local raidList = BuildRaidListText(locked)
+    local text = string.format(L.WARNING_TEXT_TEMPLATE, leaderName, raidList)
+    UpdateCenterWarning(text)
 
     local signature = NormalizeText(zone) .. "|" .. NormalizeText(subzone) .. "|" .. table.concat(locked, ",")
     local now = GetTime and GetTime() or 0
@@ -1162,13 +1336,7 @@ local function EvaluateWarning()
     end
 
     state.lastWarningAt[signature] = now
-
-    local leaderName = state.leaderName or L.WARNING_LEADER_FALLBACK
-    local raidList = BuildRaidListText(locked)
-    local text = string.format(L.WARNING_TEXT_TEMPLATE, leaderName, raidList)
-
     PrintMessage(text)
-    ShowCenterWarning(text)
 end
 
 local function OnSyncMessage(message, sender)
@@ -1371,4 +1539,5 @@ frame:SetScript("OnUpdate", function(_, elapsed)
         state.nextZoneCheckAt = now + 3
         EvaluateWarning()
     end
+
 end)

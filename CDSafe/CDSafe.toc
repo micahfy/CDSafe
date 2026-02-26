@@ -9,4 +9,5 @@
 
 Locales\enUS.lua
 Locales\zhCN.lua
+HelpContent.lua
 CDSafe.lua
