@@ -42,6 +42,7 @@ CDSafeLocaleDB["zhCN"] = {
         lowerkarazhanhalls = "卡拉赞下层大厅",
         towerofkarazhan = "卡拉赞之塔",
         naxxramas = "纳克萨玛斯",
+        emeraldsanctum = "翡翠圣地",
     },
     warningAreas = {
         moltencore = {
@@ -49,16 +50,12 @@ CDSafeLocaleDB["zhCN"] = {
             { zone = "Blackrock Mountain" },
             { subzone = "黑石深渊" },
             { subzone = "Blackrock Depths" },
-            { subzone = "熔火之心" },
-            { subzone = "Molten Core" },
         },
         blackwinglair = {
             { zone = "黑石山" },
             { zone = "Blackrock Mountain" },
             { subzone = "黑石塔" },
             { subzone = "Blackrock Spire" },
-            { subzone = "黑翼之巢" },
-            { subzone = "Blackwing Lair" },
         },
         zulgurub = {
             { zone = "荆棘谷", subzone = "祖尔格拉布" },
@@ -66,8 +63,6 @@ CDSafeLocaleDB["zhCN"] = {
         onyxia = {
             { subzone = "巨龙沼泽" },
             { subzone = "Wyrmbog" },
-            { subzone = "奥妮克希亚的巢穴" },
-            { subzone = "Onyxia's Lair" },
         },
         aq20 = {
             { zone = "安其拉之门" },
@@ -81,11 +76,13 @@ CDSafeLocaleDB["zhCN"] = {
         towerofkarazhan = {
             { zone = "逆风小径", subzone = "卡拉赞" },
         },
+        emeraldsanctum = {
+            { zone = "海加尔山", subzone = "翡翠之门" },
+            { zone = "Hyjal", subzone = "The Emerald Gateway" },
+        },
         naxxramas = {
             { subzone = "病木林" },
             { subzone = "Plaguewood" },
-            { subzone = "纳克萨玛斯" },
-            { subzone = "Naxxramas" },
         },
     },
 }

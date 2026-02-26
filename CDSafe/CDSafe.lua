@@ -47,6 +47,7 @@ local FALLBACK_RAID_DISPLAY = {
     naxxramas = "Naxxramas",
     lowerkarazhanhalls = "Lower Karazhan Halls",
     towerofkarazhan = "Tower of Karazhan",
+    emeraldsanctum = "Emerald Sanctum",
 }
 
 local FALLBACK_WARNING_AREAS = {
@@ -82,6 +83,10 @@ local FALLBACK_WARNING_AREAS = {
         { zone = "Karazhan" },
         { subzone = "Tower of Karazhan" },
         { subzone = "卡拉赞之塔" },
+    },
+    emeraldsanctum = {
+        { zone = "Hyjal", subzone = "The Emerald Gateway" },
+        { zone = "海加尔山", subzone = "翡翠之门" },
     },
     naxxramas = {
         { subzone = "Plaguewood" },
@@ -169,6 +174,54 @@ end
 
 local RAID_DEFS = {
     {
+        key = "zulgurub",
+        short = "ZG",
+        display = "Zul'Gurub",
+        aliases = {
+            "Zul'Gurub",
+            "祖尔格拉布",
+        },
+        entranceSubzones = {
+            "Zul'Gurub",
+            "祖尔格拉布",
+        },
+    },
+    {
+        key = "aq20",
+        short = "AQ20",
+        display = "Ruins of Ahn'Qiraj",
+        aliases = {
+            "Ruins of Ahn'Qiraj",
+            "Ahn'Qiraj Ruins",
+            "安其拉废墟",
+        },
+        entranceSubzones = {
+            "Ruins of Ahn'Qiraj",
+            "安其拉废墟",
+            "Ahn'Qiraj",
+            "安其拉",
+            "Ahn'Qiraj: The Fallen Kingdom",
+            "The Scarab Wall",
+            "安其拉之墙",
+            "安其拉：堕落王国",
+        },
+    },
+    {
+        key = "lowerkarazhanhalls",
+        short = "Kara-L",
+        display = "Lower Karazhan Halls",
+        aliases = {
+            "Lower Karazhan Halls",
+            "卡拉赞下层大厅",
+        },
+        entranceSubzones = {
+            "Lower Karazhan Halls",
+            "卡拉赞下层大厅",
+            "Karazhan",
+            "卡拉赞",
+        },
+    },
+    {
         key = "moltencore",
         short = "MC",
         display = "Molten Core",
@@ -203,19 +256,6 @@ local RAID_DEFS = {
         },
     },
     {
-        key = "zulgurub",
-        short = "ZG",
-        display = "Zul'Gurub",
-        aliases = {
-            "Zul'Gurub",
-            "祖尔格拉布",
-        },
-        entranceSubzones = {
-            "Zul'Gurub",
-            "祖尔格拉布",
-        },
-    },
-    {
         key = "onyxia",
         short = "Ony",
         display = "Onyxia's Lair",
@@ -231,23 +271,18 @@ local RAID_DEFS = {
         },
     },
     {
-        key = "aq20",
-        short = "AQ20",
-        display = "Ruins of Ahn'Qiraj",
+        key = "emeraldsanctum",
+        short = "ES",
+        display = "Emerald Sanctum",
         aliases = {
-            "Ruins of Ahn'Qiraj",
-            "Ahn'Qiraj Ruins",
-            "安其拉废墟",
+            "Emerald Sanctum",
+            "翡翠圣地",
         },
         entranceSubzones = {
-            "Ruins of Ahn'Qiraj",
-            "安其拉废墟",
-            "Ahn'Qiraj",
-            "安其拉",
-            "Ahn'Qiraj: The Fallen Kingdom",
-            "The Scarab Wall",
-            "安其拉之墙",
-            "安其拉：堕落王国",
+            "Hyjal",
+            "海加尔山",
+            "The Emerald Gateway",
+            "翡翠之门",
         },
     },
     {
@@ -271,18 +306,18 @@ local RAID_DEFS = {
         },
     },
     {
-        key = "lowerkarazhanhalls",
-        short = "Kara-L",
-        display = "Lower Karazhan Halls",
+        key = "naxxramas",
+        short = "Naxx",
+        display = "Naxxramas",
         aliases = {
-            "Lower Karazhan Halls",
-            "卡拉赞下层大厅",
+            "Naxxramas",
+            "纳克萨玛斯",
         },
         entranceSubzones = {
-            "Lower Karazhan Halls",
-            "卡拉赞下层大厅",
-            "Karazhan",
-            "卡拉赞",
+            "Naxxramas",
+            "纳克萨玛斯",
+            "Plaguewood",
+            "病木林",
         },
     },
     {
@@ -300,21 +335,6 @@ local RAID_DEFS = {
             "卡拉赞",
         },
     },
-    {
-        key = "naxxramas",
-        short = "Naxx",
-        display = "Naxxramas",
-        aliases = {
-            "Naxxramas",
-            "纳克萨玛斯",
-        },
-        entranceSubzones = {
-            "Naxxramas",
-            "纳克萨玛斯",
-            "Plaguewood",
-            "病木林",
-        },
-    },
 }
 
 local function GetRaidDisplayName(def)
@@ -327,6 +347,7 @@ end
 local RAID_DEF_BY_KEY = {}
 local RAID_ALIAS_TO_KEY = {}
 local WARNING_AREA_RULES = {}
+local RAID_SELF_AREA_NAME_SET = {}
 
 local state = {
     playerName = "",
@@ -447,6 +468,14 @@ local function AddKeyToLookup(lookup, text, key)
     lookup[normalized] = key
 end
 
+local function AddNameToSet(set, text)
+    local normalized = NormalizeText(text)
+    if normalized == "" then
+        return
+    end
+    set[normalized] = true
+end
+
 local function BuildRaidLookups()
     local i
     for i = 1, tgetn(RAID_DEFS) do
@@ -460,6 +489,14 @@ local function BuildRaidLookups()
         for j = 1, tgetn(def.aliases or {}) do
             AddKeyToLookup(RAID_ALIAS_TO_KEY, def.aliases[j], def.key)
         end
+
+        local selfNames = {}
+        AddNameToSet(selfNames, def.display)
+        AddNameToSet(selfNames, GetRaidDisplayName(def))
+        for j = 1, tgetn(def.aliases or {}) do
+            AddNameToSet(selfNames, def.aliases[j])
+        end
+        RAID_SELF_AREA_NAME_SET[def.key] = selfNames
     end
 end
 
@@ -478,6 +515,33 @@ local function AddWarningAreaRule(raidKey, zoneText, subzoneText)
     })
 end
 
+local function IsRaidSelfAreaRule(raidKey, zoneText, subzoneText)
+    local selfNames = RAID_SELF_AREA_NAME_SET[raidKey]
+    if not selfNames then
+        return false
+    end
+
+    local zone = NormalizeText(zoneText)
+    local subzone = NormalizeText(subzoneText)
+    local hasZone = zone ~= ""
+    local hasSubzone = subzone ~= ""
+
+    if (not hasZone) and (not hasSubzone) then
+        return false
+    end
+
+    local zoneIsSelf = hasZone and selfNames[zone] and true or false
+    local subzoneIsSelf = hasSubzone and selfNames[subzone] and true or false
+
+    if hasZone and hasSubzone then
+        return zoneIsSelf and subzoneIsSelf
+    end
+    if hasZone then
+        return zoneIsSelf
+    end
+    return subzoneIsSelf
+end
+
 local function BuildWarningAreaRules()
     local rules = {}
     WARNING_AREA_RULES = rules
@@ -489,7 +553,9 @@ local function BuildWarningAreaRules()
             for i = 1, tgetn(areaList) do
                 local area = areaList[i]
                 if type(area) == "table" then
-                    AddWarningAreaRule(raidKey, area.zone, area.subzone)
+                    if not IsRaidSelfAreaRule(raidKey, area.zone, area.subzone) then
+                        AddWarningAreaRule(raidKey, area.zone, area.subzone)
+                    end
                 end
             end
         end
@@ -1105,15 +1171,15 @@ local function CreateStatusPanel()
     end
 
     local rowCount = tgetn(RAID_DEFS)
-    local panelWidth = 620
+    local panelWidth = 650
     local panelHeight = math.max(420, 178 + (rowCount * 30))
     local columnRaidX = 20
-    local columnLeaderX = 250
-    local columnPlayerX = 445
+    local columnLeaderX = 262
+    local columnPlayerX = 462
     local headerY = -124
     local firstRowY = -156
     local rowStep = 30
-    local statusColumnWidth = 150
+    local statusColumnWidth = 165
     local helpFrameWidth = panelWidth - 50
     local helpFrameHeight = 120
     local helpFrameGap = 8
@@ -1337,20 +1403,6 @@ local function DetectRaidContext()
     local subzone = (GetSubZoneText and GetSubZoneText()) or ""
     local zoneNormalized = NormalizeText(zone)
     local subzoneNormalized = NormalizeText(subzone)
-
-    local inInstance, instanceType = false, nil
-    if IsInInstance then
-        inInstance, instanceType = IsInInstance()
-    end
-
-    if inInstance and instanceType == "raid" and zoneNormalized ~= "" then
-        local key = GetRaidKey(zone)
-        if key ~= "" then
-            seen[key] = true
-            table.insert(keys, key)
-        end
-        return keys, zone, subzone
-    end
 
     local i
     for i = 1, tgetn(WARNING_AREA_RULES) do

@@ -40,17 +40,16 @@ CDSafeLocaleDB["enUS"] = {
         lowerkarazhanhalls = "Lower Karazhan Halls",
         towerofkarazhan = "Tower of Karazhan",
         naxxramas = "Naxxramas",
+        emeraldsanctum = "Emerald Sanctum",
     },
     warningAreas = {
         moltencore = {
             { zone = "Blackrock Mountain" },
             { subzone = "Blackrock Depths" },
-            { subzone = "Molten Core" },
         },
         blackwinglair = {
             { zone = "Blackrock Mountain" },
             { subzone = "Blackrock Spire" },
-            { subzone = "Blackwing Lair" },
         },
         zulgurub = {
             { zone = "Stranglethorn Vale", subzone = "Zul'Gurub" },
@@ -58,7 +57,6 @@ CDSafeLocaleDB["enUS"] = {
         },
         onyxia = {
             { subzone = "Wyrmbog" },
-            { subzone = "Onyxia's Lair" },
         },
         aq20 = {
             { zone = "安其拉之门" },
@@ -74,9 +72,12 @@ CDSafeLocaleDB["enUS"] = {
             { zone = "Deadwind Pass", subzone = "Karazhan" },
             { zone = "逆风小径", subzone = "卡拉赞" },
         },
+        emeraldsanctum = {
+            { zone = "Hyjal", subzone = "The Emerald Gateway" },
+            { zone = "海加尔山", subzone = "翡翠之门" },
+        },
         naxxramas = {
             { subzone = "Plaguewood" },
-            { subzone = "Naxxramas" },
         },
     },
 }
