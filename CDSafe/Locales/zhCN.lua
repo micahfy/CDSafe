@@ -71,16 +71,10 @@ CDSafeLocaleDB["zhCN"] = {
             { zone = "安其拉之门" },
         },
         lowerkarazhanhalls = {
-            { zone = "卡拉赞" },
-            { zone = "Karazhan" },
-            { subzone = "卡拉赞下层大厅" },
-            { subzone = "Lower Karazhan Halls" },
+            { zone = "逆风小径", subzone = "卡拉赞" },
         },
         towerofkarazhan = {
-            { zone = "卡拉赞" },
-            { zone = "Karazhan" },
-            { subzone = "卡拉赞之塔" },
-            { subzone = "Tower of Karazhan" },
+            { zone = "逆风小径", subzone = "卡拉赞" },
         },
         naxxramas = {
             { subzone = "病木林" },

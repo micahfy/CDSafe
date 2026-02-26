@@ -60,12 +60,12 @@ CDSafeLocaleDB["enUS"] = {
             { zone = "安其拉之门" },
         },
         lowerkarazhanhalls = {
-            { zone = "Karazhan" },
-            { subzone = "Lower Karazhan Halls" },
+            { zone = "Deadwind Pass", subzone = "Karazhan" },
+            { zone = "逆风小径", subzone = "卡拉赞" },
         },
         towerofkarazhan = {
-            { zone = "Karazhan" },
-            { subzone = "Tower of Karazhan" },
+            { zone = "Deadwind Pass", subzone = "Karazhan" },
+            { zone = "逆风小径", subzone = "卡拉赞" },
         },
         naxxramas = {
             { subzone = "Plaguewood" },
