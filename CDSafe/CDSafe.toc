@@ -1,0 +1,8 @@
+## Interface: 11200
+## Title: CDSafe
+## Notes: Raid lockout sync and entrance warning for Vanilla 1.12
+## Author: CDSafe
+## Version: 1.0.0
+## SavedVariables: CDSafeDB
+
+CDSafe.lua
