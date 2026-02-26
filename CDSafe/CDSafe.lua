@@ -22,11 +22,15 @@ local FALLBACK_TEXT = {
     HEADER_LEADER = "Leader",
     HEADER_YOU = "You",
     TOOLTIP_TOGGLE_PANEL = "Left Click: Open/Close panel",
+    TOOLTIP_TOGGLE_MUTE_ZONE = "Right Click: Mute alerts in this area",
     TOOLTIP_MOVE_ICON = "Right Drag: Move icon",
     HELP_MINIMAP = "Minimap icon: Left click to toggle panel, right drag to move icon.",
+    MUTE_ZONE_ON = "Area mute enabled: chat and center alerts are muted.",
+    MUTE_ZONE_OFF = "Area mute disabled.",
+    MUTE_ZONE_AUTO_OFF = "Left muted area: alerts restored automatically.",
     WARNING_LEADER_FALLBACK = "Leader",
     WARNING_TEXT_TEMPLATE = "Leader [%s] is locked to [%s]. Do NOT enter to avoid empty lockout.",
-    WARNING_LEADER_UNKNOWN = "Reminder: Leader raid progress is unknown. Please check with the leader.",
+    WARNING_LEADER_UNKNOWN = "Reminder: Leader progress for [%s] is unknown. Please check with the leader.",
     INFO_SAFE_ENTER_TEMPLATE = "Info: Leader has no lockout for [%s]. You may enter.",
     RESET_MINIMAP = "Minimap icon position reset.",
     INSTANCE_ID_LABEL = "ID",
@@ -350,6 +354,7 @@ local state = {
     activeCenterWarningR = nil,
     activeCenterWarningG = nil,
     activeCenterWarningB = nil,
+    mutedWarningZoneSignature = nil,
     updateBucket = 0,
 }
 
@@ -360,6 +365,8 @@ local ui = {
     playerInfoText = nil,
     rows = {},
     minimapButton = nil,
+    minimapIcon = nil,
+    minimapBorder = nil,
     centerWarningFrame = nil,
     centerWarningText = nil,
     helpButton = nil,
@@ -506,6 +513,56 @@ local function PrintMessage(text)
     end
 end
 
+local function GetCurrentZoneSignature()
+    local zoneText = ""
+    if GetRealZoneText then
+        zoneText = GetRealZoneText() or ""
+    end
+    if zoneText == "" and GetZoneText then
+        zoneText = GetZoneText() or ""
+    end
+    local zone = NormalizeText(zoneText)
+    local subzone = NormalizeText((GetSubZoneText and GetSubZoneText()) or "")
+    return zone .. "|" .. subzone
+end
+
+local function IsCurrentZoneMuted()
+    return state.mutedWarningZoneSignature
+        and state.mutedWarningZoneSignature ~= ""
+        and state.mutedWarningZoneSignature == GetCurrentZoneSignature()
+end
+
+local function UpdateMinimapMuteVisual()
+    local muted = IsCurrentZoneMuted()
+    if ui.minimapIcon and ui.minimapIcon.SetVertexColor then
+        if muted then
+            ui.minimapIcon:SetVertexColor(0.55, 0.55, 0.55)
+        else
+            ui.minimapIcon:SetVertexColor(1.0, 1.0, 1.0)
+        end
+    end
+    if ui.minimapBorder and ui.minimapBorder.SetVertexColor then
+        if muted then
+            ui.minimapBorder:SetVertexColor(1.0, 0.35, 0.35)
+        else
+            ui.minimapBorder:SetVertexColor(1.0, 1.0, 1.0)
+        end
+    end
+end
+
+local function ClearZoneMute(isAuto)
+    if not state.mutedWarningZoneSignature then
+        return
+    end
+    state.mutedWarningZoneSignature = nil
+    UpdateMinimapMuteVisual()
+    if isAuto then
+        PrintMessage(L.MUTE_ZONE_AUTO_OFF)
+    else
+        PrintMessage(L.MUTE_ZONE_OFF)
+    end
+end
+
 local function EnsureCenterWarningFrame()
     if ui.centerWarningFrame then
         return
@@ -587,6 +644,19 @@ local function UpdateCenterWarning(text, r, g, b)
     state.activeCenterWarningG = g
     state.activeCenterWarningB = b
     ShowCenterWarning(text, r, g, b)
+end
+
+local function ToggleZoneMuteForCurrentArea()
+    local signature = GetCurrentZoneSignature()
+    if state.mutedWarningZoneSignature and state.mutedWarningZoneSignature == signature then
+        ClearZoneMute(false)
+        return
+    end
+
+    state.mutedWarningZoneSignature = signature
+    ClearCenterWarning()
+    UpdateMinimapMuteVisual()
+    PrintMessage(L.MUTE_ZONE_ON)
 end
 
 local function GetRaidKey(name)
@@ -972,6 +1042,9 @@ local function CreateMinimapButton()
     border:SetHeight(54)
     border:SetPoint("TOPLEFT", button, "TOPLEFT")
 
+    ui.minimapIcon = icon
+    ui.minimapBorder = border
+
     button:SetScript("OnEnter", function()
         if not GameTooltip then
             return
@@ -979,6 +1052,7 @@ local function CreateMinimapButton()
         GameTooltip:SetOwner(this, "ANCHOR_LEFT")
         GameTooltip:AddLine("CDSafe")
         GameTooltip:AddLine(L.TOOLTIP_TOGGLE_PANEL, 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(L.TOOLTIP_TOGGLE_MUTE_ZONE, 0.8, 0.8, 0.8)
         GameTooltip:AddLine(L.TOOLTIP_MOVE_ICON, 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
@@ -993,6 +1067,14 @@ local function CreateMinimapButton()
         local mouseButton = arg1
         if mouseButton == "LeftButton" then
             ToggleStatusPanel()
+            return
+        end
+        if mouseButton == "RightButton" then
+            local now = GetTime and GetTime() or 0
+            if this.dragStopAt and (now - this.dragStopAt < 0.3) then
+                return
+            end
+            ToggleZoneMuteForCurrentArea()
         end
     end)
 
@@ -1002,6 +1084,7 @@ local function CreateMinimapButton()
 
     button:SetScript("OnDragStop", function()
         this.isDragging = nil
+        this.dragStopAt = GetTime and GetTime() or 0
     end)
 
     button:SetScript("OnUpdate", function()
@@ -1012,6 +1095,7 @@ local function CreateMinimapButton()
 
     ui.minimapButton = button
     UpdateMinimapButtonPosition()
+    UpdateMinimapMuteVisual()
 end
 
 local function CreateStatusPanel()
@@ -1309,6 +1393,14 @@ local function EvaluateWarning()
         return
     end
 
+    if state.mutedWarningZoneSignature then
+        if IsCurrentZoneMuted() then
+            ClearCenterWarning()
+            return
+        end
+        ClearZoneMute(true)
+    end
+
     local contextKeys, zone, subzone = DetectRaidContext()
     if tgetn(contextKeys) == 0 then
         ClearCenterWarning()
@@ -1316,7 +1408,8 @@ local function EvaluateWarning()
     end
 
     if not state.leaderRaidKeys then
-        local text = L.WARNING_LEADER_UNKNOWN
+        local unknownRaidList = BuildRaidListText(contextKeys)
+        local text = string.format(L.WARNING_LEADER_UNKNOWN, unknownRaidList)
         UpdateCenterWarning(text)
 
         local signature = NormalizeText(zone) .. "|" .. NormalizeText(subzone) .. "|leader_unknown"
@@ -1470,6 +1563,9 @@ local function OnInstanceInfoUpdate()
 end
 
 local function OnWorldOrZoneChanged()
+    if state.mutedWarningZoneSignature and (not IsCurrentZoneMuted()) then
+        ClearZoneMute(true)
+    end
     EvaluateWarning()
 end
 
