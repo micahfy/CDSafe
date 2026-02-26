@@ -355,6 +355,7 @@ local state = {
     activeCenterWarningG = nil,
     activeCenterWarningB = nil,
     mutedWarningZoneSignature = nil,
+    pendingSyncFromReq = false,
     updateBucket = 0,
 }
 
@@ -1281,6 +1282,7 @@ local function RefreshGroupState()
         state.leaderRaidNameByKey = nil
         state.leaderRaidInstanceIdByKey = nil
         state.leaderSyncAt = nil
+        state.pendingSyncFromReq = false
         state.lastWarningAt = {}
         ClearCenterWarning()
     elseif leaderChanged and (not state.isLeader) then
@@ -1288,6 +1290,7 @@ local function RefreshGroupState()
         state.leaderRaidNameByKey = nil
         state.leaderRaidInstanceIdByKey = nil
         state.leaderSyncAt = nil
+        state.pendingSyncFromReq = false
         state.lastWarningAt = {}
         ClearCenterWarning()
     end
@@ -1297,18 +1300,19 @@ end
 
 local function BroadcastSync(force)
     if not state.isLeader or not state.inRaid or not SendAddonMessage then
-        return
+        return false
     end
 
     local now = GetTime and GetTime() or 0
     if (not force) and (now - state.lastBroadcastAt < 5) then
-        return
+        return false
     end
 
     local payload = SerializeRaidData(state.savedRaidKeys or {}, state.savedRaidNameByKey or {}, state.savedRaidInstanceIdByKey or {})
     local message = "SYNC;" .. (state.playerName or "") .. ";" .. tostring(time()) .. ";" .. payload
     SendAddonMessage(ADDON_PREFIX, message, "RAID")
     state.lastBroadcastAt = now
+    return true
 end
 
 local function RequestSync()
@@ -1514,7 +1518,7 @@ local function OnAddonMessage(prefix, message, channel, sender)
         OnSyncMessage(message, sender)
     elseif command == "REQ" then
         if state.isLeader then
-            BroadcastSync(true)
+            state.pendingSyncFromReq = true
         end
     end
 end
@@ -1542,10 +1546,12 @@ end
 
 local function OnRaidRosterUpdate()
     local leaderChanged = RefreshGroupState()
-    RequestRaidInfoThrottled(true)
+    RequestRaidInfoThrottled(false)
 
     if state.isLeader then
-        BroadcastSync(true)
+        if leaderChanged then
+            BroadcastSync(false)
+        end
     elseif state.inRaid and (leaderChanged or not state.leaderRaidKeys) then
         RequestSync()
     end
@@ -1657,6 +1663,12 @@ frame:SetScript("OnUpdate", function(_, elapsed)
     local now = GetTime and GetTime() or 0
 
     if state.inRaid then
+        if state.isLeader and state.pendingSyncFromReq then
+            if BroadcastSync(false) then
+                state.pendingSyncFromReq = false
+            end
+        end
+
         if state.isLeader and (now - state.lastBroadcastAt >= BROADCAST_INTERVAL) then
             RequestRaidInfoThrottled(true)
             BroadcastSync(true)
