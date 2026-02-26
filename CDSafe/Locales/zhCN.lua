@@ -22,6 +22,7 @@ CDSafeLocaleDB["zhCN"] = {
         HELP_MINIMAP = "小地图图标：左键开关面板，右键拖动移动。",
         WARNING_LEADER_FALLBACK = "团长",
         WARNING_TEXT_TEMPLATE = "团长[%s]在[%s]已有CD，请勿进入以免被锁定。",
+        WARNING_LEADER_UNKNOWN = "提醒：团长副本进度未知，请主动咨询团长",
         RESET_MINIMAP = "小地图图标位置已重置。",
         INSTANCE_ID_LABEL = "ID",
         STATUS_WITH_ID_TEMPLATE = "%s（%s: %s）",
@@ -55,8 +56,7 @@ CDSafeLocaleDB["zhCN"] = {
             { subzone = "Blackwing Lair" },
         },
         zulgurub = {
-            { subzone = "祖尔格拉布" },
-            { subzone = "Zul'Gurub" },
+            { zone = "荆棘谷", subzone = "祖尔格拉布" },
         },
         onyxia = {
             { subzone = "巨龙沼泽" },

@@ -22,6 +22,7 @@ CDSafeLocaleDB["enUS"] = {
         HELP_MINIMAP = "Minimap icon: Left click to toggle panel, right drag to move icon.",
         WARNING_LEADER_FALLBACK = "Leader",
         WARNING_TEXT_TEMPLATE = "Leader [%s] is locked to [%s]. Do NOT enter to avoid empty lockout.",
+        WARNING_LEADER_UNKNOWN = "Reminder: Leader raid progress is unknown. Please check with the leader.",
         RESET_MINIMAP = "Minimap icon position reset.",
     },
     raidDisplay = {
@@ -47,7 +48,8 @@ CDSafeLocaleDB["enUS"] = {
             { subzone = "Blackwing Lair" },
         },
         zulgurub = {
-            { subzone = "Zul'Gurub" },
+            { zone = "Stranglethorn Vale", subzone = "Zul'Gurub" },
+            { zone = "荆棘谷", subzone = "祖尔格拉布" },
         },
         onyxia = {
             { subzone = "Wyrmbog" },

@@ -26,6 +26,7 @@ local FALLBACK_TEXT = {
     HELP_MINIMAP = "Minimap icon: Left click to toggle panel, right drag to move icon.",
     WARNING_LEADER_FALLBACK = "Leader",
     WARNING_TEXT_TEMPLATE = "Leader [%s] is locked to [%s]. Do NOT enter to avoid empty lockout.",
+    WARNING_LEADER_UNKNOWN = "Reminder: Leader raid progress is unknown. Please check with the leader.",
     RESET_MINIMAP = "Minimap icon position reset.",
     INSTANCE_ID_LABEL = "ID",
     STATUS_WITH_ID_TEMPLATE = "%s (%s: %s)",
@@ -1285,14 +1286,27 @@ local function EvaluateWarning()
         ClearCenterWarning()
         return
     end
-    if not state.leaderRaidKeys then
-        ClearCenterWarning()
-        return
-    end
 
     local contextKeys, zone, subzone = DetectRaidContext()
     if tgetn(contextKeys) == 0 then
         ClearCenterWarning()
+        return
+    end
+
+    if not state.leaderRaidKeys then
+        local text = L.WARNING_LEADER_UNKNOWN
+        UpdateCenterWarning(text)
+
+        local signature = NormalizeText(zone) .. "|" .. NormalizeText(subzone) .. "|leader_unknown"
+        local now = GetTime and GetTime() or 0
+        local last = state.lastWarningAt[signature]
+
+        if last and (now - last < WARNING_COOLDOWN) then
+            return
+        end
+
+        state.lastWarningAt[signature] = now
+        PrintMessage(text)
         return
     end
 
