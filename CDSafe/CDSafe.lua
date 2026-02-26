@@ -2,6 +2,8 @@ local ADDON_PREFIX = "CDSafe"
 local BROADCAST_INTERVAL = 90
 local REQUEST_INTERVAL = 20
 local LEADER_SYNC_TIMEOUT = 5
+local LEADER_SYNC_REQUEST_JITTER_MIN = 1
+local LEADER_SYNC_REQUEST_JITTER_MAX = 3
 local WARNING_COOLDOWN = 45
 local RAID_INFO_REQUEST_INTERVAL = 30
 
@@ -370,6 +372,8 @@ local state = {
     leaderSyncAt = nil,
     leaderSyncAttemptStartAt = nil,
     leaderSyncTimedOut = false,
+    leaderSyncRequestDueAt = nil,
+    leaderSyncRequestSent = false,
 
     lastBroadcastAt = 0,
     lastRequestAt = 0,
@@ -404,6 +408,34 @@ local ui = {
 
 local RequestSync
 local BeginLeaderSyncAttempt
+
+local function GetLeaderSyncRequestJitter()
+    local minDelay = LEADER_SYNC_REQUEST_JITTER_MIN
+    local maxDelay = LEADER_SYNC_REQUEST_JITTER_MAX
+    if maxDelay <= minDelay then
+        return minDelay
+    end
+    if math and math.random then
+        return math.random(minDelay, maxDelay)
+    end
+    return minDelay
+end
+
+local function SeedLeaderSyncRandom()
+    if not (math and math.randomseed) then
+        return
+    end
+    local seed = time and time() or 0
+    local name = state and state.playerName or ""
+    local i
+    for i = 1, string.len(name or "") do
+        seed = seed + ((string.byte(name, i) or 0) * i)
+    end
+    math.randomseed(seed)
+    if math.random then
+        math.random()
+    end
+end
 
 local function NormalizeText(text)
     if not text or text == "" then
@@ -1379,6 +1411,8 @@ local function RefreshGroupState()
         state.leaderSyncAt = nil
         state.leaderSyncAttemptStartAt = nil
         state.leaderSyncTimedOut = false
+        state.leaderSyncRequestDueAt = nil
+        state.leaderSyncRequestSent = false
         state.pendingSyncFromReq = false
         state.lastWarningAt = {}
         ClearCenterWarning()
@@ -1389,12 +1423,16 @@ local function RefreshGroupState()
         state.leaderSyncAt = nil
         state.leaderSyncAttemptStartAt = nil
         state.leaderSyncTimedOut = false
+        state.leaderSyncRequestDueAt = nil
+        state.leaderSyncRequestSent = false
         state.pendingSyncFromReq = false
         state.lastWarningAt = {}
         ClearCenterWarning()
     elseif state.isLeader then
         state.leaderSyncAttemptStartAt = nil
         state.leaderSyncTimedOut = false
+        state.leaderSyncRequestDueAt = nil
+        state.leaderSyncRequestSent = false
     end
 
     return leaderChanged
@@ -1439,14 +1477,19 @@ BeginLeaderSyncAttempt = function(sendImmediateRequest)
     if state.isLeader or not state.inRaid then
         state.leaderSyncAttemptStartAt = nil
         state.leaderSyncTimedOut = false
+        state.leaderSyncRequestDueAt = nil
+        state.leaderSyncRequestSent = false
         RefreshStatusPanel()
         return
     end
 
     state.leaderSyncTimedOut = false
     state.leaderSyncAttemptStartAt = GetTime and GetTime() or 0
+    state.leaderSyncRequestDueAt = nil
+    state.leaderSyncRequestSent = false
     if sendImmediateRequest then
         RequestSync(true)
+        state.leaderSyncRequestSent = true
     end
     RefreshStatusPanel()
 end
@@ -1612,6 +1655,8 @@ local function OnSyncMessage(message, sender)
     state.leaderSyncAt = tonumber(syncStamp) or time()
     state.leaderSyncAttemptStartAt = nil
     state.leaderSyncTimedOut = false
+    state.leaderSyncRequestDueAt = nil
+    state.leaderSyncRequestSent = false
 
     RefreshStatusPanel()
     EvaluateWarning()
@@ -1637,6 +1682,11 @@ local function OnAddonMessage(prefix, message, channel, sender)
     elseif command == "REQ" then
         if state.isLeader then
             state.pendingSyncFromReq = true
+        elseif (not state.leaderRaidKeys) and state.leaderSyncAttemptStartAt and (not state.leaderSyncTimedOut) then
+            -- Another member already requested; follow the same response-wait window.
+            state.leaderSyncRequestDueAt = nil
+            state.leaderSyncRequestSent = true
+            state.leaderSyncAttemptStartAt = GetTime and GetTime() or 0
         end
     end
 end
@@ -1647,6 +1697,7 @@ local function OnLogin()
     CreateMinimapButton()
 
     state.playerName = StripRealm(UnitName("player")) or ""
+    SeedLeaderSyncRandom()
 
     RefreshGroupState()
     UpdateSavedRaids()
@@ -1672,7 +1723,7 @@ local function OnRaidRosterUpdate()
         end
     elseif state.inRaid then
         if leaderChanged then
-            BeginLeaderSyncAttempt(true)
+            BeginLeaderSyncAttempt(false)
         elseif (not state.leaderRaidKeys) and (not state.leaderSyncTimedOut) and (not state.leaderSyncAttemptStartAt) then
             BeginLeaderSyncAttempt(true)
         end
@@ -1795,12 +1846,23 @@ frame:SetScript("OnUpdate", function(_, elapsed)
             RequestRaidInfoThrottled(true)
             BroadcastSync(true)
         elseif (not state.isLeader) and (not state.leaderRaidKeys) and state.leaderSyncAttemptStartAt and (not state.leaderSyncTimedOut) then
-            if now - state.leaderSyncAttemptStartAt >= LEADER_SYNC_TIMEOUT then
-                state.leaderSyncAttemptStartAt = nil
-                state.leaderSyncTimedOut = true
-                RefreshStatusPanel()
-            elseif now - state.lastRequestAt >= REQUEST_INTERVAL then
-                RequestSync()
+            if state.leaderSyncRequestSent then
+                if now - state.leaderSyncAttemptStartAt >= LEADER_SYNC_TIMEOUT then
+                    state.leaderSyncAttemptStartAt = nil
+                    state.leaderSyncTimedOut = true
+                    state.leaderSyncRequestDueAt = nil
+                    state.leaderSyncRequestSent = false
+                    RefreshStatusPanel()
+                end
+            elseif state.leaderSyncRequestDueAt then
+                if now >= state.leaderSyncRequestDueAt then
+                    RequestSync(true)
+                    state.leaderSyncRequestSent = true
+                    state.leaderSyncRequestDueAt = nil
+                    state.leaderSyncAttemptStartAt = now
+                end
+            elseif now - state.leaderSyncAttemptStartAt >= LEADER_SYNC_TIMEOUT then
+                state.leaderSyncRequestDueAt = now + GetLeaderSyncRequestJitter()
             end
         end
     end
