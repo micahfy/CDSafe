@@ -27,9 +27,12 @@ CDSafeLocaleDB["enUS"] = {
         WARNING_LEADER_FALLBACK = "Leader",
         WARNING_TEXT_TEMPLATE = "Leader [%s] is locked to [%s]. Do NOT enter to avoid empty lockout.",
         WARNING_LEADER_UNKNOWN = "Reminder: Unable to fetch the leader's progress for [%s]. Please ask the leader for their lockout progress.",
+        WARNING_LEADER_SELF_TEMPLATE = "You are locked to [%s]. Confirm before leading to avoid locking raid members.",
         INFO_SAFE_ENTER_TEMPLATE = "Info: Leader has no lockout for [%s]. You may enter.",
         LEADER_SYNC_TIMEOUT_TEXT = "No leader sync received (leader may not have the addon).",
         RETRY = "Retry",
+        RAID_REPORT_TEMPLATE = "[CDSafe] %s | Leader(%s): %s | You(%s): %s",
+        RAID_REPORT_LEADER_ONLY_TEMPLATE = "[CDSafe] %s | Leader(%s): %s",
         RESET_MINIMAP = "Minimap icon position reset.",
     },
     raidDisplay = {

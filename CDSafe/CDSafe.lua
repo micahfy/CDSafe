@@ -4,7 +4,6 @@ local REQUEST_INTERVAL = 20
 local LEADER_SYNC_TIMEOUT = 5
 local LEADER_SYNC_REQUEST_JITTER_MIN = 1
 local LEADER_SYNC_REQUEST_JITTER_MAX = 3
-local WARNING_COOLDOWN = 45
 local RAID_INFO_REQUEST_INTERVAL = 30
 
 local CLIENT_LOCALE = (GetLocale and GetLocale()) or "enUS"
@@ -34,9 +33,12 @@ local FALLBACK_TEXT = {
     WARNING_LEADER_FALLBACK = "Leader",
     WARNING_TEXT_TEMPLATE = "Leader [%s] is locked to [%s]. Do NOT enter to avoid empty lockout.",
     WARNING_LEADER_UNKNOWN = "Reminder: Leader progress for [%s] is unknown. Please check with the leader.",
+    WARNING_LEADER_SELF_TEMPLATE = "You are locked to [%s]. Confirm before leading to avoid locking raid members.",
     INFO_SAFE_ENTER_TEMPLATE = "Info: Leader has no lockout for [%s]. You may enter.",
     LEADER_SYNC_TIMEOUT_TEXT = "No leader sync received (leader may not have the addon).",
     RETRY = "Retry",
+    RAID_REPORT_TEMPLATE = "[CDSafe] %s | Leader(%s): %s | You(%s): %s",
+    RAID_REPORT_LEADER_ONLY_TEMPLATE = "[CDSafe] %s | Leader(%s): %s",
     RESET_MINIMAP = "Minimap icon position reset.",
     INSTANCE_ID_LABEL = "ID",
     STATUS_WITH_ID_TEMPLATE = "%s (%s: %s)",
@@ -379,7 +381,6 @@ local state = {
     lastRequestAt = 0,
     lastRaidInfoRequestAt = 0,
     nextZoneCheckAt = 0,
-    lastWarningAt = {},
     activeCenterWarningText = nil,
     activeCenterWarningR = nil,
     activeCenterWarningG = nil,
@@ -955,6 +956,80 @@ local function FormatStatusText(known, locked, instanceId)
     return STATUS_OPEN
 end
 
+local function FormatReportStatusText(known, locked, instanceId)
+    if not known then
+        return L.STATUS_UNKNOWN
+    end
+    if locked then
+        local numericId = tonumber(instanceId)
+        if numericId and numericId > 0 then
+            return string.format(L.STATUS_WITH_ID_TEMPLATE, L.STATUS_LOCKED, L.INSTANCE_ID_LABEL, tostring(numericId))
+        end
+        return L.STATUS_LOCKED
+    end
+    return L.STATUS_OPEN
+end
+
+local function GetLeaderStatusContext()
+    local leaderNameText = state.leaderName or L.UNKNOWN
+    local leaderKeys = state.leaderRaidKeys
+    local leaderInstanceIdByKey = state.leaderRaidInstanceIdByKey
+    local leaderKnown = leaderKeys ~= nil
+
+    if state.isLeader then
+        leaderNameText = state.playerName ~= "" and state.playerName or L.YOU
+        leaderKeys = state.savedRaidKeys
+        leaderInstanceIdByKey = state.savedRaidInstanceIdByKey
+        leaderKnown = true
+    end
+
+    return leaderNameText, leaderKnown, leaderKeys, leaderInstanceIdByKey
+end
+
+local function SendRaidStatusReportForKey(raidKey)
+    if not state.inRaid then
+        PrintMessage(L.NOT_IN_RAID)
+        return
+    end
+    if not SendChatMessage then
+        return
+    end
+
+    local def = RAID_DEF_BY_KEY[raidKey]
+    if not def then
+        return
+    end
+
+    local leaderNameText, leaderKnown, leaderKeys, leaderInstanceIdByKey = GetLeaderStatusContext()
+
+    local playerLocked = state.savedRaidKeys[raidKey] and true or false
+    local playerInstanceId = state.savedRaidInstanceIdByKey and state.savedRaidInstanceIdByKey[raidKey]
+
+    local leaderLocked = false
+    local leaderInstanceId = nil
+    if leaderKnown and leaderKeys then
+        leaderLocked = leaderKeys[raidKey] and true or false
+        if leaderLocked and leaderInstanceIdByKey then
+            leaderInstanceId = leaderInstanceIdByKey[raidKey]
+        end
+    end
+
+    local leaderId = (leaderNameText and leaderNameText ~= "") and leaderNameText or L.UNKNOWN
+    local playerId = (state.playerName and state.playerName ~= "") and state.playerName or L.YOU
+    local leaderStatus = FormatReportStatusText(leaderKnown, leaderLocked, leaderInstanceId)
+    local playerStatus = FormatReportStatusText(true, playerLocked, playerInstanceId)
+    local raidName = GetRaidDisplayName(def)
+    local message
+    if state.isLeader then
+        message = string.format(L.RAID_REPORT_LEADER_ONLY_TEMPLATE, raidName, leaderId, leaderStatus)
+    else
+        message = string.format(L.RAID_REPORT_TEMPLATE, raidName, leaderId, leaderStatus, playerId, playerStatus)
+    end
+    message = string.gsub(message, "|", "||")
+
+    SendChatMessage(message, "RAID")
+end
+
 local function FormatTimeStamp(ts)
     if not ts then
         return "N/A"
@@ -981,17 +1056,7 @@ local function RefreshStatusPanel()
         return
     end
 
-    local leaderNameText = state.leaderName or L.UNKNOWN
-    local leaderKeys = state.leaderRaidKeys
-    local leaderInstanceIdByKey = state.leaderRaidInstanceIdByKey
-    local leaderKnown = leaderKeys ~= nil
-
-    if state.isLeader then
-        leaderNameText = state.playerName ~= "" and state.playerName or L.YOU
-        leaderKeys = state.savedRaidKeys
-        leaderInstanceIdByKey = state.savedRaidInstanceIdByKey
-        leaderKnown = true
-    end
+    local leaderNameText, leaderKnown, leaderKeys, leaderInstanceIdByKey = GetLeaderStatusContext()
 
     if ui.syncInfoText then
         if state.isLeader then
@@ -1316,6 +1381,7 @@ local function CreateStatusPanel()
     for i = 1, tgetn(RAID_DEFS) do
         local def = RAID_DEFS[i]
         local y = firstRowY - ((i - 1) * rowStep)
+        local rowKey = def.key
 
         local raidText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         raidText:SetPoint("TOPLEFT", panel, "TOPLEFT", columnRaidX, y)
@@ -1332,10 +1398,28 @@ local function CreateStatusPanel()
         playerText:SetWidth(statusColumnWidth)
         playerText:SetJustifyH("LEFT")
 
+        local raidReportButton = CreateFrame("Button", nil, panel)
+        raidReportButton:SetPoint("TOPLEFT", panel, "TOPLEFT", columnRaidX, y)
+        raidReportButton:SetWidth(columnLeaderX - columnRaidX - 18)
+        raidReportButton:SetHeight(18)
+        raidReportButton:SetScript("OnClick", function()
+            SendRaidStatusReportForKey(rowKey)
+        end)
+
+        local playerReportButton = CreateFrame("Button", nil, panel)
+        playerReportButton:SetPoint("TOPLEFT", panel, "TOPLEFT", columnPlayerX, y)
+        playerReportButton:SetWidth(statusColumnWidth)
+        playerReportButton:SetHeight(18)
+        playerReportButton:SetScript("OnClick", function()
+            SendRaidStatusReportForKey(rowKey)
+        end)
+
         ui.rows[def.key] = {
             raidText = raidText,
             leaderText = leaderText,
             playerText = playerText,
+            raidReportButton = raidReportButton,
+            playerReportButton = playerReportButton,
         }
     end
 
@@ -1414,7 +1498,6 @@ local function RefreshGroupState()
         state.leaderSyncRequestDueAt = nil
         state.leaderSyncRequestSent = false
         state.pendingSyncFromReq = false
-        state.lastWarningAt = {}
         ClearCenterWarning()
     elseif leaderChanged and (not state.isLeader) then
         state.leaderRaidKeys = nil
@@ -1426,7 +1509,6 @@ local function RefreshGroupState()
         state.leaderSyncRequestDueAt = nil
         state.leaderSyncRequestSent = false
         state.pendingSyncFromReq = false
-        state.lastWarningAt = {}
         ClearCenterWarning()
     elseif state.isLeader then
         state.leaderSyncAttemptStartAt = nil
@@ -1543,7 +1625,7 @@ local function BuildRaidListText(keys)
 end
 
 local function EvaluateWarning()
-    if not state.inRaid or state.isLeader then
+    if not state.inRaid then
         ClearCenterWarning()
         return
     end
@@ -1570,21 +1652,33 @@ local function EvaluateWarning()
         return
     end
 
+    if state.isLeader then
+        local leaderLocked = {}
+        local i
+        for i = 1, tgetn(contextKeys) do
+            local key = contextKeys[i]
+            if state.savedRaidKeys and state.savedRaidKeys[key] then
+                table.insert(leaderLocked, key)
+            end
+        end
+
+        if tgetn(leaderLocked) == 0 then
+            ClearCenterWarning()
+            return
+        end
+
+        table.sort(leaderLocked)
+
+        local raidList = BuildRaidListText(leaderLocked)
+        local text = string.format(L.WARNING_LEADER_SELF_TEMPLATE, raidList)
+        UpdateCenterWarning(text)
+        return
+    end
+
     if not state.leaderRaidKeys then
         local unknownRaidList = BuildRaidListText(contextKeys)
         local text = string.format(L.WARNING_LEADER_UNKNOWN, unknownRaidList)
         UpdateCenterWarning(text)
-
-        local signature = NormalizeText(zone) .. "|" .. NormalizeText(subzone) .. "|leader_unknown"
-        local now = GetTime and GetTime() or 0
-        local last = state.lastWarningAt[signature]
-
-        if last and (now - last < WARNING_COOLDOWN) then
-            return
-        end
-
-        state.lastWarningAt[signature] = now
-        PrintMessage(text)
         return
     end
 
@@ -1620,17 +1714,6 @@ local function EvaluateWarning()
     local raidList = BuildRaidListText(locked)
     local text = string.format(L.WARNING_TEXT_TEMPLATE, leaderName, raidList)
     UpdateCenterWarning(text)
-
-    local signature = NormalizeText(zone) .. "|" .. NormalizeText(subzone) .. "|" .. table.concat(locked, ",")
-    local now = GetTime and GetTime() or 0
-    local last = state.lastWarningAt[signature]
-
-    if last and (now - last < WARNING_COOLDOWN) then
-        return
-    end
-
-    state.lastWarningAt[signature] = now
-    PrintMessage(text)
 end
 
 local function OnSyncMessage(message, sender)
