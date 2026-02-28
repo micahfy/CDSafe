@@ -5,6 +5,27 @@ local LEADER_SYNC_TIMEOUT = 5
 local LEADER_SYNC_REQUEST_JITTER_MIN = 1
 local LEADER_SYNC_REQUEST_JITTER_MAX = 3
 local RAID_INFO_REQUEST_INTERVAL = 30
+local CYCLE_MISMATCH_TOLERANCE = 180
+local CYCLE_UI_REFRESH_INTERVAL = 60
+
+local CYCLE_SECONDS = {
+    d3 = 3 * 24 * 3600,
+    d5 = 5 * 24 * 3600,
+    d7 = 7 * 24 * 3600,
+}
+
+local RAID_CYCLE_GROUP_BY_KEY = {
+    zulgurub = "d3",
+    aq20 = "d3",
+    lowerkarazhanhalls = "d5",
+    onyxia = "d5",
+    moltencore = "d7",
+    blackwinglair = "d7",
+    emeraldsanctum = "d7",
+    aq40 = "d7",
+    naxxramas = "d7",
+    towerofkarazhan = "d7",
+}
 
 local CLIENT_LOCALE = (GetLocale and GetLocale()) or "enUS"
 local FALLBACK_TEXT = {
@@ -381,6 +402,7 @@ local state = {
     lastRequestAt = 0,
     lastRaidInfoRequestAt = 0,
     nextZoneCheckAt = 0,
+    nextCycleUiRefreshAt = 0,
     activeCenterWarningText = nil,
     activeCenterWarningR = nil,
     activeCenterWarningG = nil,
@@ -388,6 +410,8 @@ local state = {
     mutedWarningZoneSignature = nil,
     pendingSyncFromReq = false,
     updateBucket = 0,
+    realmName = "",
+    cycleAnchors = nil,
 }
 
 local ui = {
@@ -607,6 +631,124 @@ end
 BuildRaidLookups()
 BuildWarningAreaRules()
 
+local function GetCurrentRealmName()
+    if GetRealmName then
+        local realm = GetRealmName()
+        if realm and realm ~= "" then
+            return realm
+        end
+    end
+    return "UnknownRealm"
+end
+
+local function GetNearestPredictedResetAt(anchorResetAt, cycleSec, observedResetAt)
+    if not anchorResetAt or anchorResetAt <= 0 or not cycleSec or cycleSec <= 0 then
+        return observedResetAt
+    end
+    local delta = observedResetAt - anchorResetAt
+    local step = 0
+    if delta >= 0 then
+        step = math.floor((delta / cycleSec) + 0.5)
+    else
+        step = -math.floor(((-delta) / cycleSec) + 0.5)
+    end
+    return anchorResetAt + (step * cycleSec)
+end
+
+local function AlignCycleAnchor(groupKey, observedResetAt, now)
+    if not groupKey then
+        return
+    end
+    if not state.cycleAnchors then
+        return
+    end
+    local cycleSec = CYCLE_SECONDS[groupKey]
+    if not cycleSec or cycleSec <= 0 then
+        return
+    end
+    observedResetAt = tonumber(observedResetAt) or 0
+    now = tonumber(now) or (time and time() or 0)
+    if observedResetAt <= now then
+        return
+    end
+
+    local existing = state.cycleAnchors[groupKey]
+    if type(existing) ~= "table" then
+        state.cycleAnchors[groupKey] = {
+            anchorResetAt = observedResetAt,
+            cycleSec = cycleSec,
+            updatedAt = now,
+        }
+        return
+    end
+
+    local anchorResetAt = tonumber(existing.anchorResetAt) or 0
+    if anchorResetAt <= 0 then
+        existing.anchorResetAt = observedResetAt
+        existing.cycleSec = cycleSec
+        existing.updatedAt = now
+        return
+    end
+
+    local predicted = GetNearestPredictedResetAt(anchorResetAt, cycleSec, observedResetAt)
+    if math.abs(predicted - observedResetAt) > CYCLE_MISMATCH_TOLERANCE then
+        existing.anchorResetAt = observedResetAt
+        existing.updatedAt = now
+    end
+    existing.cycleSec = cycleSec
+end
+
+local function GetNextCycleResetAt(groupKey, now)
+    if not state.cycleAnchors then
+        return nil
+    end
+    local entry = state.cycleAnchors[groupKey]
+    if type(entry) ~= "table" then
+        return nil
+    end
+    local cycleSec = tonumber(entry.cycleSec) or CYCLE_SECONDS[groupKey]
+    local anchorResetAt = tonumber(entry.anchorResetAt) or 0
+    now = tonumber(now) or (time and time() or 0)
+    if not cycleSec or cycleSec <= 0 or anchorResetAt <= 0 then
+        return nil
+    end
+    if now <= anchorResetAt then
+        return anchorResetAt
+    end
+    local passed = math.floor((now - anchorResetAt) / cycleSec)
+    return anchorResetAt + ((passed + 1) * cycleSec)
+end
+
+local function FormatResetCountdown(secondsLeft)
+    secondsLeft = tonumber(secondsLeft) or 0
+    if secondsLeft < 0 then
+        secondsLeft = 0
+    end
+    if secondsLeft < 3600 then
+        local minutes = math.ceil(secondsLeft / 60)
+        if minutes < 1 and secondsLeft > 0 then
+            minutes = 1
+        end
+        return tostring(minutes) .. "分"
+    end
+    local days = math.floor(secondsLeft / 86400)
+    local hours = math.floor((secondsLeft - (days * 86400)) / 3600)
+    return tostring(days) .. "天" .. tostring(hours) .. "时"
+end
+
+local function GetRaidCycleCountdownText(raidKey, now)
+    local groupKey = RAID_CYCLE_GROUP_BY_KEY[raidKey]
+    if not groupKey then
+        return nil
+    end
+    local nextResetAt = GetNextCycleResetAt(groupKey, now)
+    if not nextResetAt then
+        return nil
+    end
+    local secondsLeft = nextResetAt - (tonumber(now) or (time and time() or 0))
+    return FormatResetCountdown(secondsLeft)
+end
+
 local function EnsureDatabase()
     if not CDSafeDB then
         CDSafeDB = {}
@@ -614,6 +756,14 @@ local function EnsureDatabase()
     if CDSafeDB.minimapAngle == nil then
         CDSafeDB.minimapAngle = DEFAULT_DB.minimapAngle
     end
+    if type(CDSafeDB.cycleAnchors) ~= "table" then
+        CDSafeDB.cycleAnchors = {}
+    end
+    state.realmName = GetCurrentRealmName()
+    if type(CDSafeDB.cycleAnchors[state.realmName]) ~= "table" then
+        CDSafeDB.cycleAnchors[state.realmName] = {}
+    end
+    state.cycleAnchors = CDSafeDB.cycleAnchors[state.realmName]
 end
 
 local function PrintMessage(text)
@@ -827,15 +977,16 @@ local function BuildSavedRaids()
     local names = {}
     local nameByKey = {}
     local instanceIdByKey = {}
+    local resetSecondsByKey = {}
 
     if not GetNumSavedInstances or not GetSavedInstanceInfo then
-        return keys, names, nameByKey, instanceIdByKey
+        return keys, names, nameByKey, instanceIdByKey, resetSecondsByKey
     end
 
     local total = GetNumSavedInstances() or 0
     local i
     for i = 1, total do
-        local name, instanceId = GetSavedInstanceInfo(i)
+        local name, instanceId, resetSeconds = GetSavedInstanceInfo(i)
         if name and name ~= "" then
             local key = GetRaidKey(name)
             if key and key ~= "" then
@@ -847,16 +998,23 @@ local function BuildSavedRaids()
                 if instanceId and instanceId > 0 then
                     instanceIdByKey[key] = instanceId
                 end
+                resetSeconds = tonumber(resetSeconds)
+                if resetSeconds and resetSeconds > 0 then
+                    local existingReset = tonumber(resetSecondsByKey[key]) or 0
+                    if resetSeconds > existingReset then
+                        resetSecondsByKey[key] = resetSeconds
+                    end
+                end
             end
             table.insert(names, tostring(name))
         end
     end
 
-    return keys, names, nameByKey, instanceIdByKey
+    return keys, names, nameByKey, instanceIdByKey, resetSecondsByKey
 end
 
 local function UpdateSavedRaids()
-    local keys, names, nameByKey, instanceIdByKey = BuildSavedRaids()
+    local keys, names, nameByKey, instanceIdByKey, resetSecondsByKey = BuildSavedRaids()
     local newHash = BuildHashFromNames(names)
     local changed = newHash ~= state.savedHash
 
@@ -865,6 +1023,15 @@ local function UpdateSavedRaids()
     state.savedRaidNameByKey = nameByKey
     state.savedRaidInstanceIdByKey = instanceIdByKey
     state.savedHash = newHash
+
+    local now = time and time() or 0
+    local raidKey, resetSeconds
+    for raidKey, resetSeconds in pairs(resetSecondsByKey or {}) do
+        local groupKey = RAID_CYCLE_GROUP_BY_KEY[raidKey]
+        if groupKey then
+            AlignCycleAnchor(groupKey, now + resetSeconds, now)
+        end
+    end
 
     return changed
 end
@@ -1093,6 +1260,7 @@ local function RefreshStatusPanel()
     end
 
     local i
+    local nowForCycle = time and time() or 0
     for i = 1, tgetn(RAID_DEFS) do
         local def = RAID_DEFS[i]
         local row = ui.rows[def.key]
@@ -1108,7 +1276,12 @@ local function RefreshStatusPanel()
                 end
             end
 
-            row.raidText:SetText(def.short .. " - " .. GetRaidDisplayName(def))
+            local raidNameText = def.short .. " - " .. GetRaidDisplayName(def)
+            local resetCountdownText = GetRaidCycleCountdownText(def.key, nowForCycle)
+            if resetCountdownText and resetCountdownText ~= "" then
+                raidNameText = raidNameText .. " " .. resetCountdownText
+            end
+            row.raidText:SetText(raidNameText)
             row.leaderText:SetText(FormatStatusText(leaderKnown, leaderLocked, leaderInstanceId))
             row.playerText:SetText(FormatStatusText(true, playerLocked, playerInstanceId))
         end
@@ -1120,12 +1293,15 @@ local function ToggleStatusPanel()
         return
     end
     if ui.panel:IsShown() then
+        state.nextCycleUiRefreshAt = 0
         if ui.helpFrame then
             ui.helpFrame:Hide()
         end
         ui.panel:Hide()
     else
         RefreshStatusPanel()
+        local now = GetTime and GetTime() or 0
+        state.nextCycleUiRefreshAt = now + CYCLE_UI_REFRESH_INTERVAL
         ui.panel:Show()
     end
 end
@@ -1917,6 +2093,15 @@ frame:SetScript("OnUpdate", function(_, elapsed)
     state.updateBucket = 0
 
     local now = GetTime and GetTime() or 0
+
+    if ui.panel and ui.panel:IsShown() then
+        if now >= (state.nextCycleUiRefreshAt or 0) then
+            state.nextCycleUiRefreshAt = now + CYCLE_UI_REFRESH_INTERVAL
+            RefreshStatusPanel()
+        end
+    else
+        state.nextCycleUiRefreshAt = 0
+    end
 
     if state.inRaid then
         if state.isLeader and state.pendingSyncFromReq then
