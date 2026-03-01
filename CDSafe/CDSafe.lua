@@ -206,87 +206,98 @@ end
 
 local RAID_DEFS = {
     {
-            key = "zulgurub",
-            short = "ZG",
-            display = "Zul'Gurub",
-            aliases = {
-                "Zul'Gurub",
-                "祖尔格拉布",
-            },
+        key = "zulgurub",
+        short = "ZG",
+        display = "Zul'Gurub",
+        aliases = {
+            "Zul'Gurub",
+            "祖尔格拉布",
+        },
+    },
     {
-            key = "aq20",
-            short = "AQ20",
-            display = "Ruins of Ahn'Qiraj",
-            aliases = {
-                "Ruins of Ahn'Qiraj",
-                "Ahn'Qiraj Ruins",
-                "安其拉废墟",
-            },
+        key = "aq20",
+        short = "AQ20",
+        display = "Ruins of Ahn'Qiraj",
+        aliases = {
+            "Ruins of Ahn'Qiraj",
+            "Ahn'Qiraj Ruins",
+            "安其拉废墟",
+        },
+    },
     {
-            key = "lowerkarazhanhalls",
-            short = "Kara-L",
-            display = "Lower Karazhan Halls",
-            aliases = {
-                "Lower Karazhan Halls",
-                "卡拉赞下层大厅",
-            },
+        key = "lowerkarazhanhalls",
+        short = "Kara-L",
+        display = "Lower Karazhan Halls",
+        aliases = {
+            "Lower Karazhan Halls",
+            "卡拉赞下层大厅",
+        },
+    },
     {
-            key = "onyxia",
-            short = "Ony",
-            display = "Onyxia's Lair",
-            aliases = {
-                "Onyxia's Lair",
-                "奥妮克希亚的巢穴",
-            },
+        key = "onyxia",
+        short = "Ony",
+        display = "Onyxia's Lair",
+        aliases = {
+            "Onyxia's Lair",
+            "奥妮克希亚的巢穴",
+        },
+    },
     {
-            key = "moltencore",
-            short = "MC",
-            display = "Molten Core",
-            aliases = {
-                "Molten Core",
-                "熔火之心",
-            },
+        key = "moltencore",
+        short = "MC",
+        display = "Molten Core",
+        aliases = {
+            "Molten Core",
+            "熔火之心",
+        },
+    },
     {
-            key = "blackwinglair",
-            short = "BWL",
-            display = "Blackwing Lair",
-            aliases = {
-                "Blackwing Lair",
-                "黑翼之巢",
-            },
+        key = "blackwinglair",
+        short = "BWL",
+        display = "Blackwing Lair",
+        aliases = {
+            "Blackwing Lair",
+            "黑翼之巢",
+        },
+    },
     {
-            key = "emeraldsanctum",
-            short = "ES",
-            display = "Emerald Sanctum",
-            aliases = {
-                "Emerald Sanctum",
-                "翡翠圣地",
-            },
+        key = "emeraldsanctum",
+        short = "ES",
+        display = "Emerald Sanctum",
+        aliases = {
+            "Emerald Sanctum",
+            "翡翠圣地",
+            "翡翠圣殿",
+        },
+    },
     {
-            key = "aq40",
-            short = "AQ40",
-            display = "Temple of Ahn'Qiraj",
-            aliases = {
-                "Temple of Ahn'Qiraj",
-                "Ahn'Qiraj Temple",
-                "安其拉神殿",
-            },
+        key = "aq40",
+        short = "AQ40",
+        display = "Temple of Ahn'Qiraj",
+        aliases = {
+            "Temple of Ahn'Qiraj",
+            "Ahn'Qiraj Temple",
+            "安其拉神殿",
+        },
+    },
     {
-            key = "naxxramas",
-            short = "Naxx",
-            display = "Naxxramas",
-            aliases = {
-                "Naxxramas",
-                "纳克萨玛斯",
-            },
+        key = "naxxramas",
+        short = "Naxx",
+        display = "Naxxramas",
+        aliases = {
+            "Naxxramas",
+            "纳克萨玛斯",
+        },
+    },
     {
-            key = "towerofkarazhan",
-            short = "Kara-T",
-            display = "Tower of Karazhan",
-            aliases = {
-                "Tower of Karazhan",
-                "卡拉赞之塔",
-            },
+        key = "towerofkarazhan",
+        short = "Kara-T",
+        display = "Tower of Karazhan",
+        aliases = {
+            "Tower of Karazhan",
+            "卡拉赞之塔",
+        },
+    },
 }
 
 local function GetRaidDisplayName(def)
