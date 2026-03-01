@@ -6,7 +6,7 @@ local LEADER_SYNC_REQUEST_JITTER_MIN = 1
 local LEADER_SYNC_REQUEST_JITTER_MAX = 3
 local RAID_INFO_REQUEST_INTERVAL = 30
 local CYCLE_MISMATCH_TOLERANCE = 180
-local CYCLE_UI_REFRESH_INTERVAL = 60
+local CYCLE_UI_REFRESH_INTERVAL = 10
 
 local CYCLE_SECONDS = {
     d3 = 3 * 24 * 3600,
@@ -42,6 +42,9 @@ local FALLBACK_TEXT = {
     NOT_IN_RAID = "Not in raid",
     PANEL_TITLE = "CDSafe - Raid Lockout Status",
     HEADER_RAID = "Raid",
+    HEADER_RESET = "Reset",
+    RESET_FMT_DAY_HOUR = "%dD%dH",
+    RESET_FMT_HOUR_MIN = "%dH%dM",
     HEADER_LEADER = "Leader",
     HEADER_YOU = "You",
     TOOLTIP_TOGGLE_PANEL = "Left Click: Open/Close panel",
@@ -57,6 +60,7 @@ local FALLBACK_TEXT = {
     WARNING_LEADER_SELF_TEMPLATE = "You are locked to [%s]. Confirm before leading to avoid locking raid members.",
     INFO_SAFE_ENTER_TEMPLATE = "Info: Leader has no lockout for [%s]. You may enter.",
     LEADER_SYNC_TIMEOUT_TEXT = "No leader sync received (leader may not have the addon).",
+    LEADER_SYNC_RECEIVED = "Leader progress info received. Click the minimap icon or type /cds to view.",
     RETRY = "Retry",
     RAID_REPORT_TEMPLATE = "[CDSafe] %s | Leader(%s): %s | You(%s): %s",
     RAID_REPORT_LEADER_ONLY_TEMPLATE = "[CDSafe] %s | Leader(%s): %s",
@@ -397,6 +401,7 @@ local state = {
     leaderSyncTimedOut = false,
     leaderSyncRequestDueAt = nil,
     leaderSyncRequestSent = false,
+    leaderSyncNotified = false,
 
     lastBroadcastAt = 0,
     lastRequestAt = 0,
@@ -724,16 +729,15 @@ local function FormatResetCountdown(secondsLeft)
     if secondsLeft < 0 then
         secondsLeft = 0
     end
-    if secondsLeft < 3600 then
-        local minutes = math.ceil(secondsLeft / 60)
-        if minutes < 1 and secondsLeft > 0 then
-            minutes = 1
-        end
-        return tostring(minutes) .. "分"
+    if secondsLeft >= 86400 then
+        local days = math.floor(secondsLeft / 86400)
+        local hours = math.floor((secondsLeft - (days * 86400)) / 3600)
+        return string.format(L.RESET_FMT_DAY_HOUR or "%dD%dH", days, hours)
     end
-    local days = math.floor(secondsLeft / 86400)
-    local hours = math.floor((secondsLeft - (days * 86400)) / 3600)
-    return tostring(days) .. "天" .. tostring(hours) .. "时"
+    local totalMinutes = math.floor(secondsLeft / 60)
+    local hours = math.floor(totalMinutes / 60)
+    local minutes = totalMinutes - (hours * 60)
+    return string.format(L.RESET_FMT_HOUR_MIN or "%dH%dM", hours, minutes)
 end
 
 local function GetRaidCycleCountdownText(raidKey, now)
@@ -1252,11 +1256,22 @@ local function RefreshStatusPanel()
     if ui.headerLeaderText then
         local leaderHeaderId = (leaderNameText and leaderNameText ~= "") and leaderNameText or "?"
         ui.headerLeaderText:SetText(L.HEADER_LEADER .. " - " .. leaderHeaderId)
+        if state.inRaid then
+            ui.headerLeaderText:SetPoint("TOPLEFT", ui.panel, "TOPLEFT", ui.columnPlayerX or 462, ui.headerY or -96)
+            ui.headerLeaderText:Show()
+        else
+            ui.headerLeaderText:Hide()
+        end
     end
 
     if ui.headerPlayerText then
         local playerHeaderId = (state.playerName and state.playerName ~= "") and state.playerName or "?"
         ui.headerPlayerText:SetText(L.HEADER_YOU .. " - " .. playerHeaderId)
+        if state.inRaid then
+            ui.headerPlayerText:SetPoint("TOPLEFT", ui.panel, "TOPLEFT", ui.columnLeaderX or 262, ui.headerY or -96)
+        else
+            ui.headerPlayerText:SetPoint("TOPLEFT", ui.panel, "TOPLEFT", ui.columnLeaderX or 262, ui.headerY or -96)
+        end
     end
 
     local i
@@ -1278,12 +1293,24 @@ local function RefreshStatusPanel()
 
             local raidNameText = def.short .. " - " .. GetRaidDisplayName(def)
             local resetCountdownText = GetRaidCycleCountdownText(def.key, nowForCycle)
-            if resetCountdownText and resetCountdownText ~= "" then
-                raidNameText = raidNameText .. " " .. resetCountdownText
+            if not resetCountdownText or resetCountdownText == "" then
+                resetCountdownText = "-"
             end
             row.raidText:SetText(raidNameText)
-            row.leaderText:SetText(FormatStatusText(leaderKnown, leaderLocked, leaderInstanceId))
+            if row.resetText then
+                row.resetText:SetText(resetCountdownText)
+            end
             row.playerText:SetText(FormatStatusText(true, playerLocked, playerInstanceId))
+            if state.inRaid then
+                row.playerText:SetPoint("TOPLEFT", ui.panel, "TOPLEFT", ui.columnLeaderX or 262, row.yOffset or 0)
+                row.leaderText:SetPoint("TOPLEFT", ui.panel, "TOPLEFT", ui.columnPlayerX or 462, row.yOffset or 0)
+                row.leaderText:SetText(FormatStatusText(leaderKnown, leaderLocked, leaderInstanceId))
+                row.leaderText:Show()
+            else
+                row.playerText:SetPoint("TOPLEFT", ui.panel, "TOPLEFT", ui.columnLeaderX or 262, row.yOffset or 0)
+                row.leaderText:SetText("")
+                row.leaderText:Hide()
+            end
         end
     end
 end
@@ -1467,12 +1494,14 @@ local function CreateStatusPanel()
     local panelWidth = 650
     local panelHeight = math.max(400, 138 + (rowCount * 30))
     local columnRaidX = 20
+    local columnResetX = 202
     local columnLeaderX = 262
     local columnPlayerX = 462
     local headerY = -96
     local firstRowY = -128
     local rowStep = 30
     local statusColumnWidth = 165
+    local resetColumnWidth = columnLeaderX - columnResetX - 8
     local helpFrameWidth = panelWidth - 50
     local helpFrameHeight = 120
     local helpFrameGap = 8
@@ -1541,17 +1570,23 @@ local function CreateStatusPanel()
     headerRaid:SetPoint("TOPLEFT", panel, "TOPLEFT", columnRaidX, headerY)
     headerRaid:SetText(L.HEADER_RAID)
 
-    local headerLeader = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    headerLeader:SetPoint("TOPLEFT", panel, "TOPLEFT", columnLeaderX, headerY)
-    headerLeader:SetWidth(statusColumnWidth)
-    headerLeader:SetJustifyH("LEFT")
-    headerLeader:SetText(L.HEADER_LEADER .. " - ?")
+    local headerReset = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    headerReset:SetPoint("TOPLEFT", panel, "TOPLEFT", columnResetX, headerY)
+    headerReset:SetWidth(resetColumnWidth)
+    headerReset:SetJustifyH("RIGHT")
+    headerReset:SetText(L.HEADER_RESET)
 
     local headerPlayer = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     headerPlayer:SetPoint("TOPLEFT", panel, "TOPLEFT", columnPlayerX, headerY)
     headerPlayer:SetWidth(statusColumnWidth)
     headerPlayer:SetJustifyH("LEFT")
     headerPlayer:SetText(L.HEADER_YOU .. " - ?")
+
+    local headerLeader = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    headerLeader:SetPoint("TOPLEFT", panel, "TOPLEFT", columnLeaderX, headerY)
+    headerLeader:SetWidth(statusColumnWidth)
+    headerLeader:SetJustifyH("LEFT")
+    headerLeader:SetText(L.HEADER_LEADER .. " - ?")
 
     local i
     for i = 1, tgetn(RAID_DEFS) do
@@ -1561,18 +1596,23 @@ local function CreateStatusPanel()
 
         local raidText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         raidText:SetPoint("TOPLEFT", panel, "TOPLEFT", columnRaidX, y)
-        raidText:SetWidth(columnLeaderX - columnRaidX - 18)
+        raidText:SetWidth(columnResetX - columnRaidX - 6)
         raidText:SetJustifyH("LEFT")
 
-        local leaderText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        leaderText:SetPoint("TOPLEFT", panel, "TOPLEFT", columnLeaderX, y)
-        leaderText:SetWidth(statusColumnWidth)
-        leaderText:SetJustifyH("LEFT")
+        local resetText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        resetText:SetPoint("TOPLEFT", panel, "TOPLEFT", columnResetX, y)
+        resetText:SetWidth(resetColumnWidth)
+        resetText:SetJustifyH("RIGHT")
 
         local playerText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         playerText:SetPoint("TOPLEFT", panel, "TOPLEFT", columnPlayerX, y)
         playerText:SetWidth(statusColumnWidth)
         playerText:SetJustifyH("LEFT")
+
+        local leaderText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        leaderText:SetPoint("TOPLEFT", panel, "TOPLEFT", columnLeaderX, y)
+        leaderText:SetWidth(statusColumnWidth)
+        leaderText:SetJustifyH("LEFT")
 
         local raidReportButton = CreateFrame("Button", nil, panel)
         raidReportButton:SetPoint("TOPLEFT", panel, "TOPLEFT", columnRaidX, y)
@@ -1592,10 +1632,12 @@ local function CreateStatusPanel()
 
         ui.rows[def.key] = {
             raidText = raidText,
-            leaderText = leaderText,
+            resetText = resetText,
             playerText = playerText,
+            leaderText = leaderText,
             raidReportButton = raidReportButton,
             playerReportButton = playerReportButton,
+            yOffset = y,
         }
     end
 
@@ -1651,6 +1693,9 @@ local function CreateStatusPanel()
     ui.helpFrame = helpFrame
     ui.helpBodyText = helpBody
     ui.syncRetryButton = syncRetryButton
+    ui.headerY = headerY
+    ui.columnLeaderX = columnLeaderX
+    ui.columnPlayerX = columnPlayerX
     ui.headerLeaderText = headerLeader
     ui.headerPlayerText = headerPlayer
 end
@@ -1673,6 +1718,7 @@ local function RefreshGroupState()
         state.leaderSyncTimedOut = false
         state.leaderSyncRequestDueAt = nil
         state.leaderSyncRequestSent = false
+        state.leaderSyncNotified = false
         state.pendingSyncFromReq = false
         ClearCenterWarning()
     elseif leaderChanged and (not state.isLeader) then
@@ -1684,6 +1730,7 @@ local function RefreshGroupState()
         state.leaderSyncTimedOut = false
         state.leaderSyncRequestDueAt = nil
         state.leaderSyncRequestSent = false
+        state.leaderSyncNotified = false
         state.pendingSyncFromReq = false
         ClearCenterWarning()
     elseif state.isLeader then
@@ -1691,6 +1738,7 @@ local function RefreshGroupState()
         state.leaderSyncTimedOut = false
         state.leaderSyncRequestDueAt = nil
         state.leaderSyncRequestSent = false
+        state.leaderSyncNotified = false
     end
 
     return leaderChanged
@@ -1917,6 +1965,11 @@ local function OnSyncMessage(message, sender)
     state.leaderSyncRequestDueAt = nil
     state.leaderSyncRequestSent = false
 
+    if (not state.isLeader) and (not state.leaderSyncNotified) then
+        PrintMessage(L.LEADER_SYNC_RECEIVED)
+        state.leaderSyncNotified = true
+    end
+
     RefreshStatusPanel()
     EvaluateWarning()
 end
@@ -2020,6 +2073,7 @@ local function OnEnterWorld()
 end
 
 SLASH_CDSAFE1 = "/cdsafe"
+SLASH_CDSAFE2 = "/cds"
 SlashCmdList["CDSAFE"] = function(msg)
     msg = string.lower(msg or "")
     msg = string.gsub(msg, "^%s+", "")

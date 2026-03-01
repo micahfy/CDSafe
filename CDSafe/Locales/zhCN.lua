@@ -15,6 +15,9 @@ CDSafeLocaleDB["zhCN"] = {
         NOT_IN_RAID = "不在团队中",
         PANEL_TITLE = "CDSafe - 团队副本CD状态",
         HEADER_RAID = "副本",
+        HEADER_RESET = "重置",
+        RESET_FMT_DAY_HOUR = "%d天%dH",
+        RESET_FMT_HOUR_MIN = "%dH%dM",
         HEADER_LEADER = "团长",
         HEADER_YOU = "你",
         TOOLTIP_TOGGLE_PANEL = "左键：打开/关闭面板",
@@ -30,6 +33,7 @@ CDSafeLocaleDB["zhCN"] = {
         WARNING_LEADER_SELF_TEMPLATE = "你在[%s]已有CD，带团前请确认，避免锁定团员CD。",
         INFO_SAFE_ENTER_TEMPLATE = "提示：团长在[%s]无CD，可以进入。",
         LEADER_SYNC_TIMEOUT_TEXT = "未收到团长同步信息（可能未安装插件）",
+        LEADER_SYNC_RECEIVED = "团长进度已获取，点插件按钮或输入/cds查看",
         RETRY = "重试",
         RAID_REPORT_TEMPLATE = "[CDSafe] %s | 团长(%s)：%s | 你(%s)：%s",
         RAID_REPORT_LEADER_ONLY_TEMPLATE = "[CDSafe] %s | 团长(%s)：%s",
@@ -41,33 +45,26 @@ CDSafeLocaleDB["zhCN"] = {
         moltencore = "熔火之心",
         blackwinglair = "黑翼之巢",
         zulgurub = "祖尔格拉布",
-        onyxia = "奥妮克希亚的巢穴",
+        onyxia = "奥妮克希亚",
         aq20 = "安其拉废墟",
         aq40 = "安其拉神殿",
-        lowerkarazhanhalls = "卡拉赞下层大厅",
+        lowerkarazhanhalls = "卡拉赞下层",
         towerofkarazhan = "卡拉赞之塔",
         naxxramas = "纳克萨玛斯",
-        emeraldsanctum = "翡翠圣地",
+        emeraldsanctum = "翡翠圣殿",
     },
     warningAreas = {
         moltencore = {
             { zone = "黑石山" },
-            { zone = "Blackrock Mountain" },
-            { subzone = "黑石深渊" },
-            { subzone = "Blackrock Depths" },
         },
         blackwinglair = {
             { zone = "黑石山" },
-            { zone = "Blackrock Mountain" },
-            { subzone = "黑石塔" },
-            { subzone = "Blackrock Spire" },
         },
         zulgurub = {
             { zone = "荆棘谷", subzone = "祖尔格拉布" },
         },
         onyxia = {
             { subzone = "巨龙沼泽" },
-            { subzone = "Wyrmbog" },
         },
         aq20 = {
             { zone = "安其拉之门" },
@@ -83,11 +80,9 @@ CDSafeLocaleDB["zhCN"] = {
         },
         emeraldsanctum = {
             { zone = "海加尔山", subzone = "翡翠之门" },
-            { zone = "Hyjal", subzone = "The Emerald Gateway" },
         },
         naxxramas = {
             { subzone = "病木林" },
-            { subzone = "Plaguewood" },
         },
     },
 }

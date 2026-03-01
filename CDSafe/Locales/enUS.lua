@@ -15,6 +15,9 @@ CDSafeLocaleDB["enUS"] = {
         NOT_IN_RAID = "Not in raid",
         PANEL_TITLE = "CDSafe - Raid Lockout Status",
         HEADER_RAID = "Raid",
+        HEADER_RESET = "Reset",
+        RESET_FMT_DAY_HOUR = "%dD%dH",
+        RESET_FMT_HOUR_MIN = "%dH%dM",
         HEADER_LEADER = "Leader",
         HEADER_YOU = "You",
         TOOLTIP_TOGGLE_PANEL = "Left Click: Open/Close panel",
@@ -30,6 +33,7 @@ CDSafeLocaleDB["enUS"] = {
         WARNING_LEADER_SELF_TEMPLATE = "You are locked to [%s]. Confirm before leading to avoid locking raid members.",
         INFO_SAFE_ENTER_TEMPLATE = "Info: Leader has no lockout for [%s]. You may enter.",
         LEADER_SYNC_TIMEOUT_TEXT = "No leader sync received (leader may not have the addon).",
+        LEADER_SYNC_RECEIVED = "Leader progress info received. Click the minimap icon or type /cds to view.",
         RETRY = "Retry",
         RAID_REPORT_TEMPLATE = "[CDSafe] %s | Leader(%s): %s | You(%s): %s",
         RAID_REPORT_LEADER_ONLY_TEMPLATE = "[CDSafe] %s | Leader(%s): %s",
@@ -54,32 +58,27 @@ CDSafeLocaleDB["enUS"] = {
         },
         blackwinglair = {
             { zone = "Blackrock Mountain" },
-            { subzone = "Blackrock Spire" },
         },
         zulgurub = {
             { zone = "Stranglethorn Vale", subzone = "Zul'Gurub" },
-            { zone = "荆棘谷", subzone = "祖尔格拉布" },
         },
         onyxia = {
             { subzone = "Wyrmbog" },
         },
         aq20 = {
-            { zone = "安其拉之门" },
+            { zone = "Gates of Ahn'Qiraj" },
         },
         aq40 = {
-            { zone = "安其拉之门" },
+            { zone = "Gates of Ahn'Qiraj" },
         },
         lowerkarazhanhalls = {
             { zone = "Deadwind Pass", subzone = "Karazhan" },
-            { zone = "逆风小径", subzone = "卡拉赞" },
         },
         towerofkarazhan = {
             { zone = "Deadwind Pass", subzone = "Karazhan" },
-            { zone = "逆风小径", subzone = "卡拉赞" },
         },
         emeraldsanctum = {
             { zone = "Hyjal", subzone = "The Emerald Gateway" },
-            { zone = "海加尔山", subzone = "翡翠之门" },
         },
         naxxramas = {
             { subzone = "Plaguewood" },
