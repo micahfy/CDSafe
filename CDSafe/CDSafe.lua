@@ -17,14 +17,21 @@ local CYCLE_SECONDS = {
 local RAID_CYCLE_GROUP_BY_KEY = {
     zulgurub = "d3",
     aq20 = "d3",
-    lowerkarazhanhalls = "d5",
-    onyxia = "d5",
+    lowerkarazhanhalls = "d5_lowerkarazhanhalls",
+    onyxia = "d5_onyxia",
     moltencore = "d7",
     blackwinglair = "d7",
     emeraldsanctum = "d7",
     aq40 = "d7",
     naxxramas = "d7",
     towerofkarazhan = "d7",
+}
+
+local RAID_CYCLE_SECONDS_BY_GROUP_KEY = {
+    d3 = CYCLE_SECONDS.d3,
+    d5_lowerkarazhanhalls = CYCLE_SECONDS.d5,
+    d5_onyxia = CYCLE_SECONDS.d5,
+    d7 = CYCLE_SECONDS.d7,
 }
 
 local CLIENT_LOCALE = (GetLocale and GetLocale()) or "enUS"
@@ -598,7 +605,7 @@ local function AlignCycleAnchor(groupKey, observedResetAt, now)
     if not state.cycleAnchors then
         return
     end
-    local cycleSec = CYCLE_SECONDS[groupKey]
+    local cycleSec = RAID_CYCLE_SECONDS_BY_GROUP_KEY[groupKey]
     if not cycleSec or cycleSec <= 0 then
         return
     end
@@ -642,7 +649,7 @@ local function GetNextCycleResetAt(groupKey, now)
     if type(entry) ~= "table" then
         return nil
     end
-    local cycleSec = tonumber(entry.cycleSec) or CYCLE_SECONDS[groupKey]
+    local cycleSec = tonumber(entry.cycleSec) or RAID_CYCLE_SECONDS_BY_GROUP_KEY[groupKey]
     local anchorResetAt = tonumber(entry.anchorResetAt) or 0
     now = tonumber(now) or (time and time() or 0)
     if not cycleSec or cycleSec <= 0 or anchorResetAt <= 0 then
