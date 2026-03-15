@@ -4,7 +4,7 @@
 ## Notes: Protect your raid lockout and avoid entering a locked leader's raid.
 ## Notes-zhCN: 同步团长副本CD，并在副本入口区域提醒团员避免被锁定。
 ## Author: CDSafe
-## Version: 1.1
+## Version: 1.2
 ## SavedVariables: CDSafeDB
 
 Locales\enUS.lua
