@@ -38,6 +38,7 @@ CDSafeLocaleDB["enUS"] = {
         RAID_REPORT_TEMPLATE = "[CDSafe] %s | Leader(%s): %s | You(%s): %s",
         RAID_REPORT_LEADER_ONLY_TEMPLATE = "[CDSafe] %s | Leader(%s): %s",
         RESET_MINIMAP = "Minimap icon position reset.",
+        UPDATE_AVAILABLE = "[CDSafe] A newer version (V%s) is available. Please update.",
     },
     raidDisplay = {
         moltencore = "Molten Core",
@@ -50,6 +51,7 @@ CDSafeLocaleDB["enUS"] = {
         towerofkarazhan = "Tower of Karazhan",
         naxxramas = "Naxxramas",
         emeraldsanctum = "Emerald Sanctum",
+        timbermawhold = "Timbermaw Hold",
     },
     warningAreas = {
         moltencore = {
@@ -82,6 +84,9 @@ CDSafeLocaleDB["enUS"] = {
         },
         naxxramas = {
             { subzone = "Plaguewood" },
+        },
+        timbermawhold = {
+            { zone = "Timbermaw Hold" },
         },
     },
 }

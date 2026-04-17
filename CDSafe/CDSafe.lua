@@ -7,6 +7,10 @@ local LEADER_SYNC_REQUEST_JITTER_MAX = 3
 local RAID_INFO_REQUEST_INTERVAL = 30
 local CYCLE_MISMATCH_TOLERANCE = 180
 local CYCLE_UI_REFRESH_INTERVAL = 10
+local ADDON_VERSION = "1.3"
+local NEW_RAID_MIN_VERSION = {
+    timbermawhold = "1.3",
+}
 
 local CYCLE_SECONDS = {
     d3 = 3 * 24 * 3600,
@@ -25,6 +29,7 @@ local RAID_CYCLE_GROUP_BY_KEY = {
     aq40 = "d7",
     naxxramas = "d7",
     towerofkarazhan = "d7",
+    timbermawhold = "d7",
 }
 
 local RAID_CYCLE_SECONDS_BY_GROUP_KEY = {
@@ -305,6 +310,15 @@ local RAID_DEFS = {
             "卡拉赞之塔",
         },
     },
+    {
+        key = "timbermawhold",
+        short = "TMH",
+        display = "Timbermaw Hold",
+        aliases = {
+            "Timbermaw Hold",
+            "木喉要塞",
+        },
+    },
 }
 
 local function GetRaidDisplayName(def)
@@ -340,6 +354,8 @@ local state = {
     leaderSyncRequestDueAt = nil,
     leaderSyncRequestSent = false,
     leaderSyncNotified = false,
+    leaderSyncVersion = nil,
+    updateNotified = false,
 
     lastBroadcastAt = 0,
     lastRequestAt = 0,
@@ -562,7 +578,7 @@ local function BuildWarningAreaRules()
             for i = 1, tgetn(areaList) do
                 local area = areaList[i]
                 if type(area) == "table" then
-                    if not IsRaidSelfAreaRule(raidKey, area.zone, area.subzone) then
+                    if (not area.subzone or area.subzone == "") or not IsRaidSelfAreaRule(raidKey, area.zone, area.subzone) then
                         AddWarningAreaRule(raidKey, area.zone, area.subzone)
                     end
                 end
@@ -573,6 +589,37 @@ end
 
 BuildRaidLookups()
 BuildWarningAreaRules()
+
+local function ParseVersionNumber(versionStr)
+    if not versionStr or versionStr == "" then return 0 end
+    local major, minor = StrMatch(versionStr, "^(%d+)%.(%d+)$")
+    if major and minor then
+        return tonumber(major) * 1000 + tonumber(minor)
+    end
+    return 0
+end
+
+local function IsNewRaidKey(raidKey)
+    return NEW_RAID_MIN_VERSION[raidKey] ~= nil
+end
+
+local function IsNewRaidKnownByLeader(raidKey)
+    if not IsNewRaidKey(raidKey) then return true end
+    local minVer = ParseVersionNumber(NEW_RAID_MIN_VERSION[raidKey])
+    local leaderVer = ParseVersionNumber(state.leaderSyncVersion)
+    return leaderVer >= minVer
+end
+
+local function CheckAndNotifyUpdate(remoteVersion)
+    if state.updateNotified then return end
+    if not remoteVersion or remoteVersion == "" then return end
+    local myVer = ParseVersionNumber(ADDON_VERSION)
+    local remoteVer = ParseVersionNumber(remoteVersion)
+    if remoteVer > myVer then
+        PrintMessage(string.format(L.UPDATE_AVAILABLE, remoteVersion))
+        state.updateNotified = true
+    end
+end
 
 local function GetCurrentRealmName()
     if GetRealmName then
@@ -1242,7 +1289,11 @@ local function RefreshStatusPanel()
             if state.inRaid then
                 row.playerText:SetPoint("TOPLEFT", ui.panel, "TOPLEFT", ui.columnLeaderX or 262, row.yOffset or 0)
                 row.leaderText:SetPoint("TOPLEFT", ui.panel, "TOPLEFT", ui.columnPlayerX or 462, row.yOffset or 0)
-                row.leaderText:SetText(FormatStatusText(leaderKnown, leaderLocked, leaderInstanceId))
+                local raidLeaderKnown = leaderKnown
+                if leaderKnown and not IsNewRaidKnownByLeader(def.key) then
+                    raidLeaderKnown = false
+                end
+                row.leaderText:SetText(FormatStatusText(raidLeaderKnown, leaderLocked, leaderInstanceId))
                 row.leaderText:Show()
             else
                 row.playerText:SetPoint("TOPLEFT", ui.panel, "TOPLEFT", ui.columnLeaderX or 262, row.yOffset or 0)
@@ -1476,7 +1527,7 @@ local function CreateStatusPanel()
 
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     title:SetPoint("TOP", panel, "TOP", 0, -16)
-    title:SetText(L.PANEL_TITLE)
+    title:SetText(L.PANEL_TITLE .. " V" .. ADDON_VERSION)
 
     local close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -6, -6)
@@ -1657,6 +1708,7 @@ local function RefreshGroupState()
         state.leaderSyncRequestDueAt = nil
         state.leaderSyncRequestSent = false
         state.leaderSyncNotified = false
+        state.leaderSyncVersion = nil
         state.pendingSyncFromReq = false
         ClearCenterWarning()
     elseif leaderChanged and (not state.isLeader) then
@@ -1669,6 +1721,7 @@ local function RefreshGroupState()
         state.leaderSyncRequestDueAt = nil
         state.leaderSyncRequestSent = false
         state.leaderSyncNotified = false
+        state.leaderSyncVersion = nil
         state.pendingSyncFromReq = false
         ClearCenterWarning()
     elseif state.isLeader then
@@ -1693,8 +1746,8 @@ local function BroadcastSync(force)
     end
 
     local payload = SerializeRaidData(state.savedRaidKeys or {}, state.savedRaidNameByKey or {}, state.savedRaidInstanceIdByKey or {})
-    local message = "SYNC;" .. (state.playerName or "") .. ";" .. tostring(time()) .. ";" .. payload
-    SendAddonMessage(ADDON_PREFIX, message, "RAID")
+    SendAddonMessage(ADDON_PREFIX, "SYNC;" .. (state.playerName or "") .. ";" .. tostring(time()) .. ";" .. payload, "RAID")
+    SendAddonMessage(ADDON_PREFIX, "SYNC2;" .. ADDON_VERSION .. ";" .. (state.playerName or "") .. ";" .. tostring(time()) .. ";" .. payload, "RAID")
     state.lastBroadcastAt = now
     return true
 end
@@ -1713,7 +1766,7 @@ RequestSync = function(force)
         return
     end
 
-    SendAddonMessage(ADDON_PREFIX, "REQ;" .. (state.playerName or ""), "RAID")
+    SendAddonMessage(ADDON_PREFIX, "REQ;" .. ADDON_VERSION .. ";" .. (state.playerName or ""), "RAID")
     state.lastRequestAt = now
 end
 
@@ -1845,6 +1898,7 @@ local function EvaluateWarning()
     end
 
     local locked = {}
+    local unknownNewRaids = {}
     local i
     for i = 1, tgetn(contextKeys) do
         local key = contextKeys[i]
@@ -1860,7 +1914,16 @@ local function EvaluateWarning()
             if not sameLockoutId then
                 table.insert(locked, key)
             end
+        elseif not IsNewRaidKnownByLeader(key) then
+            table.insert(unknownNewRaids, key)
         end
+    end
+
+    if tgetn(unknownNewRaids) > 0 then
+        local raidList = BuildRaidListText(unknownNewRaids)
+        local text = string.format(L.WARNING_LEADER_UNKNOWN, raidList)
+        UpdateCenterWarning(text)
+        return
     end
 
     if tgetn(locked) == 0 then
@@ -1898,6 +1961,43 @@ local function OnSyncMessage(message, sender)
     state.leaderName = senderName ~= "" and senderName or leaderInPayload
     state.leaderRaidKeys, state.leaderRaidNameByKey, state.leaderRaidInstanceIdByKey = DeserializeRaidData(payload)
     state.leaderSyncAt = tonumber(syncStamp) or time()
+    state.leaderSyncVersion = nil
+    state.leaderSyncAttemptStartAt = nil
+    state.leaderSyncTimedOut = false
+    state.leaderSyncRequestDueAt = nil
+    state.leaderSyncRequestSent = false
+
+    if (not state.isLeader) and (not state.leaderSyncNotified) then
+        PrintMessage(L.LEADER_SYNC_RECEIVED)
+        state.leaderSyncNotified = true
+    end
+
+    RefreshStatusPanel()
+    EvaluateWarning()
+end
+
+local function OnSync2Message(message, sender)
+    local versionStr, leaderInPayload, syncStamp, payload = StrMatch(message, "^SYNC2;([^;]*);([^;]*);([^;]*);(.*)$")
+    if not versionStr or not leaderInPayload then
+        return
+    end
+    if not state.inRaid then
+        return
+    end
+
+    local senderName = StripRealm(sender or "")
+    local currentLeader = state.leaderName
+    if currentLeader and currentLeader ~= "" then
+        if NormalizePlayerName(senderName) ~= NormalizePlayerName(currentLeader) then
+            return
+        end
+    end
+
+    state.leaderName = senderName ~= "" and senderName or leaderInPayload
+    state.leaderRaidKeys, state.leaderRaidNameByKey, state.leaderRaidInstanceIdByKey = DeserializeRaidData(payload)
+    state.leaderSyncAt = tonumber(syncStamp) or time()
+    state.leaderSyncVersion = versionStr
+    CheckAndNotifyUpdate(versionStr)
     state.leaderSyncAttemptStartAt = nil
     state.leaderSyncTimedOut = false
     state.leaderSyncRequestDueAt = nil
@@ -1929,7 +2029,13 @@ local function OnAddonMessage(prefix, message, channel, sender)
     local command = StrMatch(message, "^([^;]+)")
     if command == "SYNC" then
         OnSyncMessage(message, sender)
+    elseif command == "SYNC2" then
+        OnSync2Message(message, sender)
     elseif command == "REQ" then
+        local reqVersion = StrMatch(message, "^REQ;(%d+%.%d+);")
+        if reqVersion and state.isLeader then
+            CheckAndNotifyUpdate(reqVersion)
+        end
         if state.isLeader then
             state.pendingSyncFromReq = true
         elseif (not state.leaderRaidKeys) and state.leaderSyncAttemptStartAt and (not state.leaderSyncTimedOut) then

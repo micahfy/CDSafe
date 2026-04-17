@@ -1,7 +1,7 @@
 CDSafeHelpContentDB = {
     enUS = {
         button = "Help",
-        title = "CDSafe V1.1 author: Anaxir",
+        title = "CDSafe V1.3 author: Anaxir",
         body = "1.CDSafe only works in raid groups.\n"
             .. "2.Raid members can only see the leader's raid progress if the leader also has this addon installed.\n"
             .. "3.When you approach a raid entrance, the addon will automatically check for lockout risk.\n"
@@ -10,7 +10,7 @@ CDSafeHelpContentDB = {
     },
     zhCN = {
         button = "说明",
-        title = "CDSafe V1.1 - 作者：安娜希尔",
+        title = "CDSafe V1.3 - 作者：安娜希尔",
         body = "1.CDSafe 只在团队中生效。\n"
             .. "2.团长安装了插件，团员才能看到团长的副本进度。\n"
             .. "3.靠近副本入口时，插件会自动检查是否有锁本风险。\n"

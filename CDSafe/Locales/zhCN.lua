@@ -38,6 +38,7 @@ CDSafeLocaleDB["zhCN"] = {
         RAID_REPORT_TEMPLATE = "[CDSafe] %s | 团长(%s)：%s | 你(%s)：%s",
         RAID_REPORT_LEADER_ONLY_TEMPLATE = "[CDSafe] %s | 团长(%s)：%s",
         RESET_MINIMAP = "小地图图标位置已重置。",
+        UPDATE_AVAILABLE = "[CDSafe] 发现新版本（V%s），请及时更新。",
         INSTANCE_ID_LABEL = "ID",
         STATUS_WITH_ID_TEMPLATE = "%s（%s: %s）",
     },
@@ -52,6 +53,7 @@ CDSafeLocaleDB["zhCN"] = {
         towerofkarazhan = "卡拉赞之塔",
         naxxramas = "纳克萨玛斯",
         emeraldsanctum = "翡翠圣殿",
+        timbermawhold = "木喉要塞",
     },
     warningAreas = {
         moltencore = {
@@ -83,6 +85,9 @@ CDSafeLocaleDB["zhCN"] = {
         },
         naxxramas = {
             { subzone = "病木林" },
+        },
+        timbermawhold = {
+            { zone = "木喉要塞" },
         },
     },
 }
